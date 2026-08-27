@@ -41,6 +41,17 @@ v0.2+ 先抽象什么,由真实断点决定,不靠猜。有一个常驻 issue �
 的速览表或 [CALIBRATION.md](CALIBRATION.md) 全文。机器可读结果在
 [`data/*.yaml`](data) 与 [`results/*.json`](results)。
 
+## 这套 rig
+
+| | |
+|---|---|
+| ![D435i](docs/img/rig_d435i.jpg) | ![AprilGrid](docs/img/target_aprilgrid.jpg) |
+| Intel RealSense D435i,fw 5.12.7.100,USB 3.2 | DFOPTIX `Tag6-320-35.2mm` 硬质板 AprilGrid |
+
+靶标是成品板不是自己打印的 —— 这点很重要:排除了打印缩放这个误差源,
+残差就能归到检测和相机身上,而不是尺子身上。`tagSpacing = 0.3` 经四方确认
+(尺子实测白缝 10.6 mm、型号名反推、Kalibr 默认、重投影误差扫描在 0.30 处有明确极小)。
+
 ## 特意发表的负结果
 
 - **本机 cam-IMU 平移标不出来**:三次独立解散布 24.6~31.7 mm,量本身才 ~26 mm。

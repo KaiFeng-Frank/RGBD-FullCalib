@@ -46,6 +46,19 @@ If you run any stage on a different RGB-D / visual-inertial rig and hit a wall,
 open an issue with the traceback — real breakpoints, not guesses, decide what
 v0.2+ abstracts first. There is a standing issue for exactly this.
 
+## The rig
+
+| | |
+|---|---|
+| ![D435i on tripod](docs/img/rig_d435i.jpg) | ![AprilGrid target](docs/img/target_aprilgrid.jpg) |
+| Intel RealSense D435i, fw 5.12.7.100, USB 3.2 | DFOPTIX `Tag6-320-35.2mm` AprilGrid on a rigid board |
+
+The target is a manufactured board, not a home print — which matters: it rules out
+print-scaling as an error source, so residuals trace to detection and to the camera,
+not to the ruler. `tagSpacing = 0.3` was confirmed four independent ways
+(ruler-measured 10.6 mm gap, the part number, the Kalibr default, and a
+reprojection-error sweep with a clear minimum at 0.30).
+
 ## Results at a glance
 
 | Stage | Key numbers | External check | Verdict |
