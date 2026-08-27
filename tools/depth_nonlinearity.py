@@ -81,8 +81,19 @@ def residual_trend(P, n, c, nbins=14, min_pts=200):
 
 
 MIN_RATIO = 2.5      # 连续段远近比:二次拟合的杠杆
-MIN_ZMAX = 2.0       # 最远距离:低于此则外推不到影响分析关心的 3~4 m
+MIN_ZMAX = 3.0       # 合格线:z_max 3.0 m -> 界 ~3.7%,已远好于 2.5 m 的 5.96%
+GOOD_ZMAX = 4.0      # 理想值:界压到 1.8%,越过厂商谱面
 MIN_PTS = 20000
+
+
+def expected_ub(zmax):
+    """这个 z_max 大致能给出多紧的 95% 上界(%)。
+
+    由合成标定:(2.5m, 5.96%) (3.0, 4.03) (3.5, 2.92) (4.2, 1.60) 拟合幂律
+    ub ≈ 60·zmax^-2.53。分辨力几乎全由最远距离决定,所以调摆位时
+    盯着"最远"比盯着"远近比"更有用。
+    """
+    return 60.0 * max(zmax, 0.5) ** -2.53
 
 
 def placement_ok(ratio, zmax, npts):
@@ -102,19 +113,81 @@ def placement_ok(ratio, zmax, npts):
     return len(bad) == 0, bad
 
 
+def geometry_hint(n, c):
+    """从拟合平面反推相机高度和俯角,并算出要看到 4 m 需要多小的俯角。
+
+    看到的最远地面距离 ≈ 高度 / tan(俯角) —— 相机太低时,俯角再压平也看不远。
+    这是"为什么调不出跨度"最常见的原因,直接显示出来比让人猜快得多。
+    """
+    h = abs(float(np.dot(c, n)))                    # 相机到平面的垂直距离
+    pitch = np.degrees(np.arcsin(min(abs(n[2]), 1.0)))   # 光轴与平面的夹角
+    need = np.degrees(np.arctan(h / 4.0)) if h > 0 else 0.0
+    return h, pitch, need
+
+
+def advise(zl, zh, ratio, npts, geo, ok, scene=None, normal=None):
+    """当前最该做的**一个**动作。
+
+    一次只说一件事。目标面是墙还是地面,给的建议完全不同 ——
+    地面要调高度和俯角(受天花板/杂物限制,难),墙面只要贴着一端沿墙看(容易)。
+    所以先按法向判断在看什么,再给对应的话。
+    """
+    h, pitch, need = geo
+    horizontal = normal is not None and abs(normal[1]) > 0.7   # y 主导 = 水平面
+    if scene is not None:
+        p50, p90, far = scene
+        if p90 < 2.0 and far < 0.05:
+            return (f"镜头前 {p50:.1f} m 就被挡住了 —— 贴到一面长墙的一端,"
+                    f"镜头顺着墙拍过去")
+    if npts < 5000:
+        return "画面里没有大片平面 —— 对准一面墙或地面"
+    if zh >= 3.0:
+        return "很好,保持不动"
+    if horizontal:
+        if h < 0.40:
+            return f"相机太低(离地 {h*100:.0f} cm)—— 搬到桌上,或者改成贴着墙拍"
+        if pitch > need + 4:
+            return f"镜头太朝下({pitch:.0f}°)—— 往上抬到 {need:.0f}° 以内"
+        return (f"地面只够到 {zh:.1f} m(前方多半有东西挡)—— "
+                f"改成贴着一面长墙的一端、顺着墙拍,通常更容易")
+    # 竖直面(墙):贴近一端沿墙拍,天然有梯度
+    if ratio < MIN_RATIO:
+        return f"墙面只铺到 {zh:.1f} m —— 把相机贴到墙的一端,镜头顺着墙拍,别正对墙"
+    return f"再顺着墙偏一点 —— 现在够到 {zh:.1f} m,到 3 m 就合格"
+
+
+def render(zl, zh, ratio, npts, geo, ok, stable, scene=None, normal=None):
+    """单行原地刷新。
+
+    原来用 ANSI 上移画四行面板,在部分终端里不生效就变成滚屏刷屏。
+    \r 覆盖单行是所有终端都认的最小公倍数 —— 动作放最前面,因为那是唯一要照做的。
+    """
+    ub = expected_ub(zh)
+    filled = int(min(zh / 4.0, 1.0) * 12)
+    bar = '█' * filled + '░' * (12 - filled)
+    if ok:
+        extra = "" if zh >= GOOD_ZMAX else f"(再远些界更紧,现 {ub:.1f}%)"
+        line = f"  ✓ 合格 {stable}/4 别动 {extra}   {zh:.1f}/4.0m {bar}"
+    else:
+        line = (f"  ▶ {advise(zl, zh, ratio, npts, geo, ok, scene, normal)}"
+                f"   [{zh:.1f}/4.0m {bar} 上界{ub:.0f}%]")
+    print("\r" + line + " " * 12, end='', flush=True)
+
+
 def placement_score(P, min_pts=300, nb=24):
-    """返回 (最长连续段 z_lo, z_hi, 远近比, 内点数) —— live 模式用的轻量版。"""
+    """返回 (z_lo, z_hi, 远近比, 内点数, 几何提示, 平面法向) —— live 轻量版。"""
     n, c, inl = fit_plane(P, iters=200)
     z = P[inl][:, 2]
+    g = geometry_hint(n, c)
     if len(z) < 1000:
-        return 0.0, 0.0, 0.0, int(inl.sum())
+        return 0.0, 0.0, 0.0, int(inl.sum()), g, n
     lo, hi = np.percentile(z, [1, 99])
     edges = np.linspace(lo, hi, nb + 1)
     cnt = np.array([((z >= edges[i]) & (z < edges[i + 1])).sum() for i in range(nb)])
     good = cnt >= min_pts
     bi = bl = ci = cl = 0
-    for i, g in enumerate(good):
-        if g:
+    for i, is_good in enumerate(good):      # 别叫 g:上面的 g 是几何提示(坑 #12 同款)
+        if is_good:
             if cl == 0:
                 ci = i
             cl += 1
@@ -123,9 +196,9 @@ def placement_score(P, min_pts=300, nb=24):
         else:
             cl = 0
     if bl == 0:
-        return 0.0, 0.0, 0.0, int(inl.sum())
+        return 0.0, 0.0, 0.0, int(inl.sum()), g, n
     zl, zh = edges[bi], edges[bi + bl]
-    return float(zl), float(zh), float(zh / max(zl, 1e-6)), int(inl.sum())
+    return float(zl), float(zh), float(zh / max(zl, 1e-6)), int(inl.sum()), g, n
 
 
 def check_placement(P, min_ratio=2.5, min_pts=300, nb=24):
@@ -324,11 +397,11 @@ def main():
         except Exception:
             pass
         scale = ds.get_depth_scale()
-        print("实时摆位评分 —— 慢慢调相机角度,盯着「远近比」。")
-        print("连续合格 4 次会自动开采,不用退出(退出重进的空当里摆位会变)。\n")
+        print("按提示调相机就行,合格会自动开采(Ctrl+C 随时退出)")
         best = 0.0
         stable = 0
         done = False
+        hist = []
         try:
             while not done:
                 acc = [np.asanyarray(p.wait_for_frames().get_depth_frame().get_data())
@@ -336,16 +409,22 @@ def main():
                 d = np.median(np.stack(acc), 0)
                 P, _ = deproject(d)
                 if len(P) < 2000:
-                    print("\r  画面里没有足够深度                    ", end='', flush=True)
                     continue
-                zl, zh, ratio, npts = placement_score(P)
+                zl, zh, ratio, npts, geo, nrm = placement_score(P)
+                hist.append((zl, zh, ratio, npts, geo[0], geo[1], geo[2]))
+                if len(hist) > 5:
+                    hist.pop(0)
+                if len(hist) >= 3:      # 取中位,单帧抓错平面不至于把提示带偏
+                    m = np.median(np.array(hist), axis=0)
+                    zl, zh, ratio, npts = m[0], m[1], m[2], int(m[3])
+                    geo = (m[4], m[5], m[6])
+                zall = d[d > 0.15]
+                scene = (float(np.median(zall)), float(np.percentile(zall, 90)),
+                         float(((d > 3.0) & (d < 8.0)).mean())) if len(zall) > 1000 else None
                 best = max(best, ratio)
                 ok, bad = placement_ok(ratio, zh, npts)
                 stable = stable + 1 if ok else 0
-                mark = f'✓ 合格 {stable}/4' if ok else ('· 太近' if zh < MIN_ZMAX else '· 跨度不足')
-                bar = '#' * int(min(ratio, 6) / 6 * 30)
-                print(f"\r  连续段 {zl:4.2f}~{zh:4.2f} m   远近比 {ratio:4.2f}×  "
-                      f"内点 {npts:6d}  |{bar:<30}| {mark}   ", end='', flush=True)
+                render(zl, zh, ratio, npts, geo, ok, stable, scene, nrm)
                 if stable < 4:
                     continue
                 print(f"\n\n✓ 摆位稳定,保持不动 —— 正在采 {a.frames} 帧...")
@@ -353,7 +432,7 @@ def main():
                        .astype(np.float32) * scale for _ in range(a.frames)]
                 d = np.median(np.stack(acc), 0)
                 P, _ = deproject(d)
-                zl, zh, ratio, npts = placement_score(P)
+                zl, zh, ratio, npts, geo, nrm = placement_score(P)
                 ok2, bad2 = placement_ok(ratio, zh, npts)
                 if not ok2:
                     print("  采集期间摆位变了(" + bad2[0][:30] + "),继续调\n")
@@ -403,7 +482,7 @@ def main():
         return
     # 分析前先过摆位门。跨度不够时二次拟合的杠杆太短,算出的"上界"会比
     # 厂商谱面还宽 —— 那不是测量结果,是没测出来。宁可拒绝也不给假数字。
-    zl, zh, ratio, npts = placement_score(P)
+    zl, zh, ratio, npts, geo, nrm = placement_score(P)
     ok, bad = placement_ok(ratio, zh, npts)
     if not ok:
         print(f"\n✗ 摆位不合格:连续段 {zl:.2f}~{zh:.2f} m,远近比 {ratio:.2f}×,内点 {npts}")
