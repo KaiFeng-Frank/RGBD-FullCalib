@@ -1,10 +1,14 @@
 # D435i Calibration Field Guide
 
-**A complete, field-tested calibration of one Intel RealSense D435i — where every
-parameter ships with an external-reference verdict, and every pitfall is written down.**
+**Building a one-stop, multi-sensor calibration workbench — where every parameter
+(camera, IMU, LiDAR, cross-sensor) comes back with a verdict: checked against
+references from *outside* the optimization, visualized, and flagged before a bad
+number ever reaches your SLAM stack. v0.1 ships the first full instance: one
+Intel RealSense D435i, end to end. The [roadmap](ROADMAP.md) goes much further.**
 
-[中文版 README](README_zh.md) · full field notes in [CALIBRATION.md](CALIBRATION.md) (Chinese) ·
-error-propagation analysis in [IMPACT_ANALYSIS.md](IMPACT_ANALYSIS.md) (Chinese)
+[中文版 README](README_zh.md) · field notes [CALIBRATION.md](CALIBRATION.md) (Chinese) ·
+error propagation [IMPACT_ANALYSIS.md](IMPACT_ANALYSIS.md) (Chinese) ·
+[ROADMAP](ROADMAP.md) · [CHANGELOG](CHANGELOG.md)
 
 ![verdict card](docs/img/verdict_card.png)
 
@@ -16,17 +20,31 @@ And when a parameter fails its check, the tool says so — the red row above is 
 camera–IMU translation, shipped with the verdict *"do not freeze this number,
 let your VIO estimate it online."*
 
-## What this is (and is not)
+## Where this is going
 
-**This is** a working example: one camera, calibrated end to end (RGB intrinsics →
-stereo IR → RGB↔IR extrinsics → depth noise model → camera-IMU → accelerometer
-intrinsics → thermal drift model), with the tools, the sanity-check layer, the GUI,
-and ~15 documented pitfalls that cost real hours.
+The endgame is the calibration workbench that doesn't exist yet: describe your
+rig, capture with guidance, calibrate everything — intrinsics, IMU, LiDAR,
+cross-sensor extrinsics, time sync — and trust the output because every number
+carries its own verdict. Kalibr stops at vision+IMU; vendor tools are black
+boxes; the rest is scattered scripts and blog folklore. Full vision and version
+plan: [ROADMAP.md](ROADMAP.md).
 
-**This is not** (yet) a universal calibration suite. Scripts are written for the
-D435i and tested on exactly one unit. If they help you calibrate something else,
-that's a bonus — the *method* (verdict layer + external references) transfers even
-where the code doesn't.
+**v0.1, shipped**: one camera end to end (RGB intrinsics → stereo IR → RGB↔IR
+extrinsics → depth noise model → camera-IMU → accelerometer intrinsics → thermal
+drift model), with the tools, the verdict layer, the GUI, and ~15 documented
+pitfalls that cost real hours.
+
+The seams for what's next are already in the code: about half the tools are
+device-agnostic (marked in the layout below), the viewer's source abstraction
+was built for a sensor that isn't a camera (a native point-stream channel is
+reserved for the Mid-360 on its way), and v0.2 turns the verdict checks into
+declarative rules so a new device means new rules, not forked code.
+
+### Bring your camera
+
+If you run any stage on a different RGB-D / visual-inertial rig and hit a wall,
+open an issue with the traceback — real breakpoints, not guesses, decide what
+v0.2+ abstracts first. There is a standing issue for exactly this.
 
 ## Results at a glance
 
@@ -112,19 +130,25 @@ kalibr.sh               dockerized Kalibr wrapper (X11, host UID, repo mounted a
 calibrate_cam.sh        camera / stereo calibration with explicit focal initials
 calibrate_imu_cam.sh    camera-IMU calibration, optional --bag-from-to trimming
 aprilgrid_6x6_35.2mm.yaml   the target (tag6-320; spacing verified 4 independent ways)
-tools/
-  capture.py            AprilGrid capture: settle detection, resume, exposure lock,
-                        color|ir|stereo|trio streams
-  record.py             bag recording (cam / cam+imu / imu), gyro-clock IMU pairing
-  bagio.py              ROS1 bag writing via rosbags (no ROS installation needed)
-  check_depth.py        plane-fit depth noise model, two-round protocol
-  allan.py              Allan deviation from a 3 h static bag
-  record_thermal.py     cold-start thermal sweep recorder (IMU + depth + tags)
-  analyze_thermal.py    per-channel linear thermal model + R²
-  record_imu_poses.py   12-pose static capture for accelerometer intrinsics
-  imu_intrinsic.py      T·K·(a−b) least-squares solve against local gravity
-  apply_imu_intrinsic.py  rewrite a bag with corrected accel (for A/B experiments)
+tools/                  [generic] = no RealSense dependency, reusable as-is
+  capture.py            [D435i]   AprilGrid capture: settle detection, resume,
+                        exposure lock, color|ir|stereo|trio streams
+  record.py             [D435i]   bag recording (cam / cam+imu / imu), gyro-clock pairing
+  bagio.py              [generic] ROS1 bag writing via rosbags (no ROS needed)
+  check_depth.py        [D435i]   plane-fit depth noise model, two-round protocol
+  allan.py              [generic] Allan deviation from any static IMU bag
+  record_thermal.py     [D435i]   cold-start thermal sweep recorder (IMU + depth + tags)
+  analyze_thermal.py    [generic] per-channel linear thermal model + R² (reads npz)
+  record_imu_poses.py   [D435i]   12-pose static capture for accelerometer intrinsics
+  imu_intrinsic.py      [generic] T·K·(a−b) least-squares solve against local gravity
+  apply_imu_intrinsic.py [generic] rewrite any bag with corrected accel (A/B experiments)
+  imgs2bag.py           [generic] image folders → ROS1 bag
 viewer/                 WebGL2 viewer + calib summary server (stdlib http + websockets)
+  sources/base.py       [generic] source abstraction: dense depth maps and native
+                        point streams are different render paths, split here on purpose
+  sources/d435i.py      [D435i]   depth/color/IR via pyrealsense2
+  sources/synthetic.py  [generic] camera-free test source
+  protocol.py           [generic] wire format; T_POINTS channel reserved for LiDAR
 setup/                  udev rules, hardware setup
 data/                   calibration outputs (yaml/txt tracked; bags are not)
 results/                allan/thermal/depth models (json/yaml) + plots
@@ -141,6 +165,16 @@ results/                allan/thermal/depth models (json/yaml) + plots
 
 Hardware note: results in this repo are from one D435i (fw 5.12.7.100) on USB 3.2.
 Your unit's numbers **will** differ — that's the point of calibrating.
+
+## Roadmap at a glance
+
+**v0.2** verdict layer becomes declarative rules · **v0.3** Mid-360 + the full
+LiDAR-camera-IMU cross-sensor chain · **v0.4** more RGB-D families, rig as a
+description file · **v0.5** the impact analyzer becomes a tool (input your motion
+profile, get *your* first-order error terms) · **v1.0** guided capture,
+calibration regression, searchable pitfall base — the workbench.
+
+Full reasoning in [ROADMAP.md](ROADMAP.md); history in [CHANGELOG.md](CHANGELOG.md).
 
 ## Why publish error *impact*, not just error
 

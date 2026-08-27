@@ -1,6 +1,7 @@
 # D435i 标定结果
 
 
+> 本文是 v0.1(D435i 实例)的完整实录;项目愿景与版本规划 → [ROADMAP.md](ROADMAP.md)
 > 误差→建图/定位/发表价值的影响分析(含 Mid-360 与雷视外参)→ [IMPACT_ANALYSIS.md](IMPACT_ANALYSIS.md)
 设备 `RealSense D435I`  序列号 `947122070908`  固件 `5.12.7.100`
 USB 链路 **3.2 / 5000 Mbps**(初期 USB2 是线缆问题,已换线解决,详见"已知限制")
