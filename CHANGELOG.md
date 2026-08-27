@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- Renamed `d435i-calibration-field-guide` → `RGBD-FullCalib`
+- Depth nonlinearity: three independent methods attempted, verdict is
+  rig-limited (see CALIBRATION.md) — published as a negative result
+- Rig photos added
+
 See [ROADMAP.md](ROADMAP.md) — next up: declarative verdict schema (v0.2),
 Mid-360 + LiDAR-camera extrinsics (v0.3, hardware ordered).
 

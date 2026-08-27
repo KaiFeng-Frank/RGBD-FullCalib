@@ -1,4 +1,4 @@
-# D435i Calibration Field Guide
+# RGBD-FullCalib
 
 **Building a one-stop, multi-sensor calibration workbench — where every parameter
 (camera, IMU, LiDAR, cross-sensor) comes back with a verdict: checked against

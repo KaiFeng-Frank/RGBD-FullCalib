@@ -1,5 +1,8 @@
 # Roadmap
 
+> Renamed to **RGBD-FullCalib** on 2026-08-28 — the D435i is the first instance,
+> not the scope.
+
 ## The destination
 
 **A one-stop, multi-sensor calibration workbench.** Describe your rig — cameras,
@@ -55,8 +58,8 @@ math shown. Calibration effort ranked by consequence, not by tradition.
 
 Guided capture (the tool tells you which poses are missing, not just whether
 corners were found), calibration regression (re-calibrate, diff against history,
-alarm on drift), the knowledge base searchable by symptom. At this point the
-repo outgrows its D435i name and gets renamed — GitHub redirects.
+alarm on drift), the knowledge base searchable by symptom —
+full-stack RGB-D calibration, one command, every number with a verdict.
 
 ## Standing experiment queue (ranked by measured impact)
 
