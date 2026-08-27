@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+- **v0.2 core landed: the verdict layer is data.** 22 checks moved from prose
+  into `verdicts/rules_d435i.yaml`; a small engine feeds CLI / REPORT.md / GUI
+  from one source. Factory reference params dumped to machine-readable JSON.
+  First catch: the "five independent baseline measurements" claim was fake
+  independence (Kalibr inherits the camera chain) — now honestly "two".
+- Depth nonlinearity fully closed: pixel-locking sawtooth attributed to the
+  device (cross-capture r=0.97), correction model shipped and validated
 - Renamed `d435i-calibration-field-guide` → `RGBD-FullCalib`
 - Depth nonlinearity: three independent methods attempted, verdict is
   rig-limited (see CALIBRATION.md) — published as a negative result

@@ -6,3 +6,4 @@ rosbags>=0.10              # write ROS1 bags for Kalibr without installing ROS1
 websockets>=12             # point-cloud viewer streaming
 matplotlib>=3.8            # analysis plots (Allan, thermal, depth)
 scipy>=1.12                # least-squares fits (IMU intrinsic, thermal model)
+pyyaml>=6                  # verdict rules + camchain parsing

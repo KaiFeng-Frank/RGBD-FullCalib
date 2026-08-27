@@ -69,6 +69,23 @@ v0.2+ 先抽象什么,由真实断点决定,不靠猜。有一个常驻 issue �
 15+ 条完整故事在 [CALIBRATION.md](CALIBRATION.md) 的「采集踩过的坑」章,
 一行版摘要见 [English README](README.md#pitfalls-that-cost-real-hours)。
 
+## 判决层已经是代码了(v0.2 核心)
+
+```bash
+python -m verdicts                      # 终端判决
+python -m verdicts --md REPORT.md       # Markdown 报告(已入库)
+```
+
+原来以散文形式写在文档和 GUI 代码里的每一条核查,现在都在
+[`verdicts/rules_d435i.yaml`](verdicts/rules_d435i.yaml) —— 22 条规则,每条 =
+{取值表达式, 外部参照, 容差, 行动指令},由 ~200 行引擎执行,CLI 报告、
+REPORT.md、GUI 卡片同一事实源。缺文件显示为"待数据",标了一半也能出报告。
+加设备 = 写规则,不是 fork 代码。
+
+机器检验散文第一天就有收获:旧文案"五次独立测量基线"被抓出**假独立** ——
+Kalibr 的 imu-camera 阶段逐位继承相机链,五个数里三个是复制品。规则已改为
+"两次独立标定",yaml 里留了注释讲原因。
+
 ## GUI
 
 WebGL2 点云查看器,三页签:实时点云(16-bit 深度 WebSocket 流、shader 内反投影)、

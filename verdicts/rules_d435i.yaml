@@ -1,0 +1,222 @@
+# D435i 判决规则 —— 每条 = 一个自标定量 + 一个优化之外的参照 + 容差 + 行动指令。
+# 数值不写死在这里:全部运行时从 sources 提取。加设备 = 写一份这样的文件。
+sources:
+  rgb_chain:    {file: data/cam_rgb-camchain.yaml,          format: yaml}
+  rgb_txt:      {file: data/cam_rgb-results-cam.txt,        format: text}
+  ir_chain:     {file: data/cam_ir-camchain.yaml,           format: yaml}
+  trio_chain:   {file: data/cam_trio-camchain.yaml,         format: yaml}
+  imucam:       {file: data/camimu-camchain-imucam.yaml,    format: yaml}
+  imucam2:      {file: data/camimu2-camchain-imucam.yaml,   format: yaml}
+  imucam_corr:  {file: data/camimu_corr-camchain-imucam.yaml, format: yaml}
+  imucam_txt:   {file: data/camimu-results-imucam.txt,      format: text}
+  factory:      {file: results/factory_params.json,         format: json}
+  depthchk:     {file: results/depth_check.json,            format: json}
+  imu_intr:     {file: results/imu_intrinsic.json,          format: json}
+  thermal:      {file: results/thermal_model.json,          format: json}
+  pixellock:    {file: results/pixellock_model.json,        format: json}
+
+checks:
+  # ── RGB 内参 ──
+  - id: rgb_cx
+    stage: rgb
+    name: 主点 cx vs 出厂
+    value: {expr: "s['rgb_chain']['cam0']['intrinsics'][2]", unit: px}
+    reference: {expr: "s['factory']['rgb_1280x720']['cx']", label: 出厂}
+    compare: within
+    tol: {abs: 2.0}
+    verdict_pass: 主点可信,可冻结
+    verdict_fail: 主点偏出厂 >2px —— 检查姿态覆盖后重采
+  - id: rgb_fx
+    stage: rgb
+    name: 焦距 fx vs 出厂
+    value: {expr: "s['rgb_chain']['cam0']['intrinsics'][0]", unit: px}
+    reference: {expr: "s['factory']['rgb_1280x720']['fx']", label: 出厂}
+    compare: within
+    tol: {abs: 5.0}
+    severity_fail: warn
+    verdict_pass: 与出厂一致
+    verdict_fail: 预期不一致 —— 出厂用零畸变模型,把 +1.2% 畸变吸进了焦距;用本标定值
+  - id: rgb_reproj
+    stage: rgb
+    name: 重投影 std
+    value: {expr: "rx(s['rgb_txt'], 'reprojection error: \\\\[[^\\\\]]*\\\\] \\\\+- \\\\[([0-9.]+), ([0-9.]+)\\\\]', 0, 1)", unit: px}
+    reference: {expr: "1.0", label: 可用阈值}
+    compare: le
+    verdict_pass: 拟合健康
+    verdict_fail: 重投影 >1px —— 检测/同步/靶标几何有一处不对
+
+  # ── IR 双目 ──
+  - id: baseline
+    stage: ir
+    name: 立体基线 vs 出厂
+    value: {expr: "norm([s['ir_chain']['cam1']['T_cn_cnm1'][0][3], s['ir_chain']['cam1']['T_cn_cnm1'][1][3], s['ir_chain']['cam1']['T_cn_cnm1'][2][3]])*1000", unit: mm}
+    reference: {expr: "s['factory']['baseline_mm']", label: Intel 产线}
+    compare: within
+    tol: {rel: 0.5}
+    severity_fail: bad
+    verdict_pass: 基线可信 —— 深度尺度由它决定,可冻结
+    verdict_fail: 基线偏出厂 >0.5% —— 先查 tagSize/tagSpacing(坑 #4),别信这次深度尺度
+  # 注意:kalibr_calibrate_imu_camera 不精化相机间外参,imucam* 文件的基线
+  # 逐位继承输入 camchain —— 把它们当"独立测量"是假独立(规则化时用机器
+  # 检验才发现,散文版曾写"五次")。真独立的只有 cam_ir 与 cam_trio 两次。
+  - id: baseline_spread
+    stage: ir
+    name: 两次独立标定(不同 bag)之差
+    value: {expr: "spread([norm([c['cam1']['T_cn_cnm1'][0][3],c['cam1']['T_cn_cnm1'][1][3],c['cam1']['T_cn_cnm1'][2][3]])*1000 for c in [s['ir_chain'],s['trio_chain']]])", unit: mm}
+    reference: {expr: "0.5", label: 一致性阈值}
+    compare: le
+    verdict_pass: 跨采集一致
+    verdict_fail: 两次标定基线不一致 —— 有会话质量问题
+
+  # ── 深度质量 ──
+  - id: depth_flatness
+    stage: depth
+    name: 两轮独立平整度一致
+    value: {expr: "abs(s['depthchk']['rounds'][1]['fit']['target_flatness_mm'] - s['depthchk']['rounds'][0]['fit']['target_flatness_mm'])", unit: mm}
+    reference: {expr: "0.2", label: 复现阈值}
+    compare: le
+    verdict_pass: 平整度可复现 —— 残差主要来自目标不是相机
+    verdict_fail: 两轮不平整度不一致 —— 目标或采集方式变了
+  - id: depth_dispnoise
+    stage: depth
+    name: 视差噪声
+    value: {expr: "s['depthchk']['rounds'][1]['fit']['disparity_noise_px']", unit: px}
+    reference: {expr: "0.15", label: 谱面量级}
+    compare: le
+    verdict_pass: 噪声在正常范围,σ∝z² 模型可用作权重
+    verdict_fail: 视差噪声偏大 —— 查发射器/曝光/USB 带宽
+  - id: pixellock_stable
+    stage: depth
+    name: pixel-locking 锯齿跨时刻可重复
+    value: {expr: "s['pixellock']['validation']['independent_capture_corr']"}
+    reference: {expr: "0.9", label: 可重复阈值}
+    compare: ge
+    verdict_pass: 器件属性确认 —— 校正模板可长期使用
+    verdict_fail: 波形漂了 —— 重提模板再部署
+  - id: pixellock_corr
+    stage: depth
+    name: 锯齿校正在独立数据上有效
+    value: {expr: "s['pixellock']['validation']['independent_pk_after']", unit: milli-px}
+    reference: {expr: "s['pixellock']['validation']['independent_pk_before']*0.7", label: 校正前×0.7}
+    compare: le
+    verdict_pass: 校正闭环成立
+    verdict_fail: 校正无效 —— 查符号与 fold 相位
+
+  # ── cam-IMU ──
+  - id: ts_two_cams
+    stage: camimu
+    name: 两相机时间偏移之差
+    value: {expr: "abs(s['imucam']['cam0']['timeshift_cam_imu'] - s['imucam']['cam1']['timeshift_cam_imu'])*1000", unit: ms}
+    reference: {expr: "0.1", label: 一致性阈值}
+    compare: le
+    verdict_pass: 两条独立解一致 —— 时移可信
+    verdict_fail: 两相机解出的时移不一致 —— 同步链路有问题
+  - id: ts_preproc
+    stage: camimu
+    name: 时移对 IMU 前处理不敏感
+    value: {expr: "abs(s['imucam']['cam0']['timeshift_cam_imu'] - s['imucam_corr']['cam0']['timeshift_cam_imu'])*1000", unit: ms}
+    reference: {expr: "0.05", label: 不变性阈值}
+    compare: le
+    verdict_pass: 时移稳健,可冻结
+    verdict_fail: 时移随前处理变 —— 别冻结
+  - id: ts_session
+    stage: camimu
+    name: 时移跨会话漂移
+    value: {expr: "abs(s['imucam']['cam0']['timeshift_cam_imu'] - s['imucam2']['cam0']['timeshift_cam_imu'])*1000", unit: ms}
+    reference: {expr: "0.1", label: 冻结阈值}
+    compare: le
+    severity_fail: warn
+    verdict_pass: 跨会话稳定
+    verdict_fail: 随温度/负载漂移 —— 温和工况可冻结,激进工况在线估计
+  - id: gravity
+    stage: camimu
+    name: 解出的重力模长
+    value: {expr: "norm([rx(s['imucam_txt'],'\\\\[(-?[0-9.]+)\\\\s+(-?[0-9.]+)\\\\s+(-?[0-9.]+)\\\\s*\\\\]',0,0), rx(s['imucam_txt'],'\\\\[(-?[0-9.]+)\\\\s+(-?[0-9.]+)\\\\s+(-?[0-9.]+)\\\\s*\\\\]',0,1), rx(s['imucam_txt'],'\\\\[(-?[0-9.]+)\\\\s+(-?[0-9.]+)\\\\s+(-?[0-9.]+)\\\\s*\\\\]',0,2)])", unit: m/s²}
+    reference: {expr: "9.80655", label: Kalibr 约束值}
+    compare: within
+    tol: {rel: 0.1}
+    verdict_pass: 优化没有跑飞
+    verdict_fail: 重力模长异常 —— 解发散,别用
+  - id: resid_accel
+    stage: camimu
+    name: accel 归一化残差
+    value: {expr: "rx(s['imucam_txt'], 'Accelerometer error \\\\(imu0\\\\):\\\\s+mean ([0-9.]+)')"}
+    reference: {expr: "2.0", label: 理想≈1}
+    compare: le
+    severity_fail: warn
+    verdict_pass: 噪声模型自洽
+    verdict_fail: 残差偏高 —— 振动/模糊/同步抖动未建模(对照实验已排除 IMU 内参)
+  - id: resid_gyro
+    stage: camimu
+    name: gyro 归一化残差
+    value: {expr: "rx(s['imucam_txt'], 'Gyroscope error \\\\(imu0\\\\):\\\\s+mean ([0-9.]+)')"}
+    reference: {expr: "2.0", label: 理想≈1}
+    compare: le
+    severity_fail: warn
+    verdict_pass: 噪声模型自洽
+    verdict_fail: 残差偏高 —— 同 accel 行
+  - id: t_ci_spread
+    stage: camimu
+    name: 平移三次独立解散布 / 量本身
+    value: {expr: "spread([norm([c['cam0']['T_cam_imu'][0][3],c['cam0']['T_cam_imu'][1][3],c['cam0']['T_cam_imu'][2][3]]) for c in [s['imucam'],s['imucam2'],s['imucam_corr']]]) / mean([norm([c['cam0']['T_cam_imu'][0][3],c['cam0']['T_cam_imu'][1][3],c['cam0']['T_cam_imu'][2][3]]) for c in [s['imucam'],s['imucam2'],s['imucam_corr']]]) * 100", unit: '%'}
+    reference: {expr: "15", label: 可信阈值}
+    compare: le
+    severity_fail: bad
+    verdict_pass: 平移可冻结
+    verdict_fail: 散布与量同级 —— 杠杆臂太短,不要冻结,交 VIO 在线估计(用均值作初值)
+
+  # ── RGB↔IR 外参(GUI 卡片 id: rgbir)──
+  - id: trio_chain_t
+    stage: rgbir
+    name: IR2→RGB 平移 vs 出厂链
+    value: {expr: "norm([s['trio_chain']['cam2']['T_cn_cnm1'][0][3],s['trio_chain']['cam2']['T_cn_cnm1'][1][3],s['trio_chain']['cam2']['T_cn_cnm1'][2][3]])*1000", unit: mm}
+    reference: {expr: "norm([s['factory']['T_ir2_to_ir1']['t_mm'][0]+s['factory']['T_ir1_to_rgb']['t_mm'][0], s['factory']['T_ir2_to_ir1']['t_mm'][1]+s['factory']['T_ir1_to_rgb']['t_mm'][1], s['factory']['T_ir2_to_ir1']['t_mm'][2]+s['factory']['T_ir1_to_rgb']['t_mm'][2]])", label: 出厂外参链}
+    compare: within
+    tol: {rel: 1.0}
+    verdict_pass: 与出厂一致 —— 上色/对齐可用
+    verdict_fail: 偏出厂 >1% —— 查采集时的运动同步(坑 #8)
+
+  # ── 加速度计内参 ──
+  - id: imu_resid
+    stage: imuintr
+    name: 12 姿态拟合残差 RMS
+    value: {expr: "s['imu_intr']['residual_rms_ms2']*1000", unit: mm/s²}
+    reference: {expr: "10", label: 可用阈值}
+    compare: le
+    verdict_pass: 内参可用于静置校正与重力对齐
+    verdict_fail: 残差偏大 —— 姿态时段里有振动,重采
+  - id: imu_poses
+    stage: imuintr
+    name: 姿态数(可辨识下限 9 未知数)
+    value: {expr: "s['imu_intr']['n_poses']"}
+    reference: {expr: "9", label: 未知数个数}
+    compare: ge
+    severity_fail: bad
+    verdict_pass: 可辨识
+    verdict_fail: 姿态不足 —— bias/scale/非正交不可分离(单姿态陷阱)
+
+  # ── 温漂 ──
+  - id: th_depth_r2
+    stage: thermal
+    name: 深度尺度温漂拟合 R²
+    value: {expr: "s['thermal']['depth_r2']"}
+    reference: {expr: "0.6", label: 可信下限}
+    compare: ge
+    verdict_pass: −372ppm/°C 可入补偿模型
+    verdict_fail: 拟合不可信 —— 升温跨度或数据量不够
+  - id: th_pp_r2
+    stage: thermal
+    name: 主点温漂(预期不可检出)
+    value: {expr: "max(s['thermal']['principal_r2']['cx'], s['thermal']['principal_r2']['cy'])"}
+    reference: {expr: "0.3", label: 可检出下限}
+    compare: le
+    verdict_pass: 证伪成立 —— 主点不随温度漂,无需补偿
+    verdict_fail: 主点温漂可检出 —— 与此前证伪矛盾,重测
+  - id: th_gyro_r2
+    stage: thermal
+    name: gyro 零偏温漂拟合 R²(x 轴)
+    value: {expr: "s['thermal']['gyro_bias_r2']['x']"}
+    reference: {expr: "0.6", label: 可信下限}
+    compare: ge
+    verdict_pass: 0.0046°/s/°C 可入补偿模型
+    verdict_fail: 拟合不可信

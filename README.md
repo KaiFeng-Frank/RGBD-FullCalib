@@ -118,6 +118,27 @@ code snippets and numbers read universally). Highlights:
 | 13 | Range-along-ray vs z-depth confusion | stored ray length as depth once — a flat wall renders as a sphere (101 mm residual, right angles read 81.8°) |
 | 14 | WebGL pages never finish "loading" | `requestAnimationFrame` keeps headless screenshots timing out — ship a `?static=1` mode; verify your GUI with your own eyes |
 
+## The verdict layer is now code (v0.2 core)
+
+```bash
+python -m verdicts                      # terminal verdicts
+python -m verdicts --md REPORT.md       # markdown report (committed in repo)
+```
+
+Every check that used to live as prose now lives in
+[`verdicts/rules_d435i.yaml`](verdicts/rules_d435i.yaml) — 22 rules, each one
+`{value expression, external reference, tolerance, action}` — executed by a
+~200-line engine ([`verdicts/engine.py`](verdicts/engine.py)) that feeds the CLI
+report, [`REPORT.md`](REPORT.md), and the GUI cards from one source of truth.
+Missing files render as *pending*, so a half-calibrated repo still reports.
+Adding a device means writing rules, not forking code.
+
+Machine-checking the prose paid off on day one: the old "five independent
+baseline measurements" claim turned out to be **fake independence** — Kalibr's
+imu-camera stage inherits the camera chain verbatim, so three of the five
+numbers were copies. The rule now says "two independent calibrations" and the
+yaml carries the comment explaining why.
+
 ## The GUI
 
 A WebGL2 point-cloud viewer with three tabs: **live cloud** (16-bit depth over WebSocket,
@@ -156,6 +177,7 @@ tools/                  [generic] = no RealSense dependency, reusable as-is
   imu_intrinsic.py      [generic] T·K·(a−b) least-squares solve against local gravity
   apply_imu_intrinsic.py [generic] rewrite any bag with corrected accel (A/B experiments)
   imgs2bag.py           [generic] image folders → ROS1 bag
+verdicts/               the verdict engine + rules (see above); python -m verdicts
 viewer/                 WebGL2 viewer + calib summary server (stdlib http + websockets)
   sources/base.py       [generic] source abstraction: dense depth maps and native
                         point streams are different render paths, split here on purpose

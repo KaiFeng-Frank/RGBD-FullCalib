@@ -6,6 +6,20 @@
 """
 import json
 import os
+import sys
+
+# 判决行不再手写:全部来自规则引擎(verdicts/rules_d435i.yaml)。
+# GUI 卡片、CLI 报告、REPORT.md 同一事实源 —— 改判决=改规则文件,不改代码。
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+try:
+    from verdicts.engine import evaluate, for_gui
+    _RULES = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                          'verdicts', 'rules_d435i.yaml')
+    _VERDICTS = for_gui(evaluate(_RULES))
+except Exception as _e:
+    _VERDICTS = {}
+    print(f'[calib_summary] 判决引擎不可用: {_e}')
+import os
 import re
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -58,9 +72,7 @@ def collect():
                ['分辨率', '1280 × 720']] if i else []),
         note='出厂畸变系数全为 0(未提供),边缘实测有 10 px 量级位移;'
              'cx 与出厂值吻合到 0.13 px,是标定可信度的直接证据。',
-        checks=[['cx vs 出厂', '+0.13 px', 'ok'],
-                ['fx vs 出厂', '−29.4 px(出厂零畸变拟合把畸变吸进了焦距)', 'warn'],
-                ['重投影 std', '0.564 / 0.642 px', 'ok']] if i else []))
+        checks=_VERDICTS.get('rgb', [])))
 
     # --- 阶段 2: IR 双目 ---
     t = _read('data/cam_ir-camchain.yaml')
@@ -77,8 +89,7 @@ def collect():
                ['分辨率', '1280 × 720']] if i0 else []),
         note='IR 经 ASIC 硬件去畸变,k1 仅 −0.011(RGB 是 +0.110);'
              'fx≠fy 说明出厂给的"严格相等"是 rectification 的产物,非物理真实。',
-        checks=[['基线 vs Intel 产线', '50.148 vs 50.228 mm(0.16%)', 'ok'],
-                ['五次独立测量极差', '0.140 mm', 'ok']] if i0 else []))
+        checks=_VERDICTS.get('ir', [])))
 
     # --- 阶段 3: 深度质量 ---
     j = _read('results/depth_check.json')
@@ -96,8 +107,7 @@ def collect():
               if d3 else []),
         note='误差随 z² 增长,不是线性。0.45 m 以内测的主要是目标本身有多平。'
              '深度噪声在空间上相关(10~20 px 斑块),小邻域平均无法降噪。',
-        checks=[['系统性畸变', '无(残差为均匀随机噪点)', 'ok'],
-                ['两轮独立测量', '目标不平整度 0.70 vs 0.72 mm', 'ok']] if d3 else []))
+        checks=_VERDICTS.get('depth', [])))
 
     # --- 阶段 4: cam-IMU ---
     t = _read('data/camimu-camchain-imucam.yaml')
@@ -123,11 +133,7 @@ def collect():
              '后重跑,accel 归一化残差仅从 6.42 降到 5.96(7%),平移依旧不收敛 —— '
              '残差与散布的主因不在加速度计标度/非正交,而在杠杆臂信噪比与工况振动。'
              '结论:平移交给 VIO 在线估计,不要冻结这个数。',
-        checks=[['两相机时间偏移之差', '21 μs', 'ok'],
-                ['解出的重力模长', '9.8070 vs 9.80665(0.004%)', 'ok'],
-                ['时间偏移可复现性', '校正 IMU 内参后仅变 12 μs', 'ok'],
-                ['归一化残差', 'accel 6.42 / gyro 4.09 —— 应接近 1', 'warn'],
-                ['平移一致性', '三次解 |t| = 26.7 / 31.7 / 24.6 mm —— 不可信', 'bad']] if tr else []))
+        checks=_VERDICTS.get('camimu', [])))
 
     # --- RGB-IR 外参 ---
     t = _read('data/cam_trio-camchain.yaml')
@@ -148,9 +154,7 @@ def collect():
         note='必须在板子静止时采集:RGB 与 IR 是独立 sensor、无硬件同步,'
              '运动中时间戳差 44 ms,错位会被优化器塞进外参(曾导致 y 差 3 mm、z 差 7.8 mm)。'
              '静止后偏差降到 0.1 ms。',
-        checks=[['时间戳偏差(静止)', '0.1 ms', 'ok'],
-                ['RGB 重投影 std', '0.482 px(运动采集时是 2.88)', 'ok'],
-                ['RGB 内参', '本次覆盖不足,内参请用阶段 1 的', 'warn']] if tr2 else []))
+        checks=_VERDICTS.get('rgbir', [])))
 
     # --- IMU 内参 ---
     j = _read('results/imu_intrinsic.json')
@@ -167,8 +171,7 @@ def collect():
         note='Kalibr 的 IMU 模型假设标度因子为 1、三轴正交,该假设在本机不成立。'
              '主要误差是 z–x 轴非正交 2.83°,它在固定姿态下伪装成 0.7% 的标度偏差 —— '
              '单姿态数据无法分离 bias/scale/非正交。',
-        checks=[['残差', f"129 → {ii['residual_rms_ms2']*1000:.2f} mm/s²(34 倍)", 'ok'],
-                ['留一法交叉验证', 'scale 波动 0.0003,azx 波动 0.033°', 'ok']] if ii else []))
+        checks=_VERDICTS.get('imuintr', [])))
 
     # --- 温漂 ---
     j = _read('results/thermal_model.json')
@@ -185,8 +188,7 @@ def collect():
         note='Allan 方差要求恒温(测随机噪声),温漂要求升温(测趋势),两者要求相反。'
              '加速度计温漂是陀螺的 14 倍(13°C 跨度分别相当于 Allan 1 秒噪声的 79 倍和 5.3 倍)。'
              '深度温漂 −372 ppm/°C 是铝合金线胀系数的 16 倍,主因不是机械膨胀。',
-        checks=[['数据量', '3 h / 188 万条 IMU / 温度跨度 13°C', 'ok'],
-                ['合成验证', '九个系数注入后全部还原到 1% 以内', 'ok']] if tm else []))
+        checks=_VERDICTS.get('thermal', [])))
 
     pending = [
         dict(name='深度非线性', why='阶段 3 只测到 0.92 m,不知道 σ=k·d² 在 3~4 m 是否仍成立',
