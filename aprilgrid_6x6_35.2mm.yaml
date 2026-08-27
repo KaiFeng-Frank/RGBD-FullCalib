@@ -1,0 +1,19 @@
+# D435i 标定靶标:tag6-320-35.2mm
+#
+#   tagSize    : 单个 tag 黑块边长,米
+#   tagSpacing : tag 间白缝宽度 ÷ tagSize (比值)
+#
+# tagSpacing=0.3 已由 Kalibr 自身扫描确认(重投影误差在 0.30 处取极小):
+#     0.25 -> 1.93px   0.28 -> 1.02px   0.30 -> 0.61px   0.32 -> 0.72px   0.35 -> 1.38px
+#
+# 尺寸自洽:6*35.2 + 5*(0.3*35.2) = 264.0mm,板料 320mm,四周各 28mm 白边
+# (那圈白边不是留白好看,AprilTag 检测要求每个 tag 周围有 quiet zone)
+#
+# ⚠ 注意:不要用 OpenCV aruco 检测的角点去反推本文件的参数。
+#   OpenCV 的 DICT_APRILTAG_36h11 与 Kalibr 内置 apriltag 库对 tag 边界的
+#   定义不一致,两边的 tagSize 含义不同,混用会得出错误的 tagSpacing。
+target_type: 'aprilgrid'
+tagCols: 6
+tagRows: 6
+tagSize: 0.0352
+tagSpacing: 0.3

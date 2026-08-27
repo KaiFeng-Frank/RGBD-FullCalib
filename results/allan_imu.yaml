@@ -1,0 +1,14 @@
+#Accelerometers
+accelerometer_noise_density: 1.183355e-03   #Noise density (continuous-time)
+accelerometer_random_walk:   5.943867e-05   #Bias random walk
+
+#Gyroscopes
+gyroscope_noise_density:     1.986981e-04   #Noise density (continuous-time)
+gyroscope_random_walk:       3.236584e-07   #Bias random walk
+
+rostopic:                    /imu0
+update_rate:                 199.6
+
+# 由 imu_allan.bag 的 3.00 小时静置数据算出。
+# 注意:Kalibr 官方建议把 Allan 算出的值放大 5~10 倍再用于标定,
+# 因为真实工况下的振动和温漂远超实验室静置条件。

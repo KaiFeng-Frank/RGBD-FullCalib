@@ -1,0 +1,8 @@
+# Tested on Python 3.11 (conda env "d435i-calib")
+numpy>=2.0
+opencv-python>=4.10        # AprilTag detection via cv2.aruco (tested on 5.0)
+pyrealsense2>=2.55         # librealsense Python bindings (tested on 2.58, D435i fw 5.12.7.100)
+rosbags>=0.10              # write ROS1 bags for Kalibr without installing ROS1
+websockets>=12             # point-cloud viewer streaming
+matplotlib>=3.8            # analysis plots (Allan, thermal, depth)
+scipy>=1.12                # least-squares fits (IMU intrinsic, thermal model)

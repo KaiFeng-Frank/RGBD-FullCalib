@@ -1,0 +1,571 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>D435i 实时点云查看器</title>
+<style>
+:root{
+  --bg:#0d1117; --panel:#161b22; --line:#30363d; --fg:#e6edf3; --dim:#8b949e;
+  --accent:#58a6ff; --ok:#3fb950; --warn:#d29922; --err:#f85149;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:var(--bg);color:var(--fg);
+  font:13px/1.5 ui-monospace,"SF Mono",Menlo,Consolas,"Noto Sans CJK SC",monospace;overflow:hidden}
+#app{display:grid;grid-template-columns:250px 1fr;height:100vh}
+#nav{display:flex;gap:2px;padding:8px 12px 0;background:var(--panel);border-bottom:1px solid var(--line)}
+#nav button{width:auto;padding:7px 16px;border-radius:6px 6px 0 0;border-bottom:none;
+  background:transparent;color:var(--dim);font-size:12.5px}
+#nav button.on{background:var(--bg);color:var(--fg);border-color:var(--line)}
+#main{display:grid;grid-template-rows:auto 1fr;min-width:0;min-height:0}
+.page{display:none;overflow:auto;min-height:0;grid-row:2}
+#nav{grid-row:1;align-self:start}
+.page.on{display:block}
+#page-live.on{display:grid;grid-template-rows:1fr 200px;overflow:hidden}
+.wrap{padding:18px 22px;max-width:1100px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;
+  padding:14px 16px;margin-bottom:14px}
+.card h3{font-size:13.5px;margin-bottom:2px;display:flex;align-items:center;gap:8px}
+.card .st{font-size:10.5px;padding:1px 7px;border-radius:10px;font-weight:500}
+.st.done{background:rgba(63,185,80,.16);color:var(--ok)}
+.st.pending{background:rgba(210,153,34,.16);color:var(--warn)}
+.card .src{font-size:10.5px;color:var(--dim);margin:3px 0 10px}
+.card table{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:9px}
+.card td{padding:3px 0;vertical-align:top}
+.card td:first-child{color:var(--dim);width:38%;padding-right:12px}
+.card td:last-child{font-variant-numeric:tabular-nums}
+.note{font-size:11.5px;color:var(--dim);line-height:1.65;
+  border-left:2px solid var(--line);padding-left:10px;margin-top:4px}
+.chk{display:flex;gap:7px;align-items:flex-start;font-size:11.5px;margin:4px 0}
+.chk i{font-style:normal;flex:0 0 auto;width:13px}
+.chk.ok i{color:var(--ok)} .chk.warn i{color:var(--warn)} .chk.bad i{color:var(--err)}
+.chk b{font-weight:400;color:var(--dim)} .chk b em{font-style:normal;color:var(--fg)}
+h2.sec{font-size:15px;margin:4px 0 12px;font-weight:600}
+.sub2{font-size:11.5px;color:var(--dim);margin-bottom:16px;line-height:1.6}
+#side{background:var(--panel);border-right:1px solid var(--line);overflow-y:auto;padding:12px}
+#glwrap{position:relative;min-height:0;background:#05070a}
+#gl{width:100%;height:100%;display:block}
+#bottom{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line);border-top:1px solid var(--line)}
+.tile{position:relative;background:#05070a;overflow:hidden;display:flex;align-items:center;justify-content:center}
+.tile canvas,.tile img{max-width:100%;max-height:100%;object-fit:contain;image-rendering:pixelated}
+.tile .lbl{position:absolute;left:8px;top:6px;font-size:11px;color:var(--dim);
+  background:rgba(0,0,0,.55);padding:2px 6px;border-radius:3px;pointer-events:none}
+h1{font-size:14px;font-weight:600;margin-bottom:2px}
+.sub{color:var(--dim);font-size:11px;margin-bottom:12px}
+.grp{margin-bottom:14px;border-top:1px solid var(--line);padding-top:10px}
+.grp:first-of-type{border-top:none;padding-top:0}
+.grp h2{font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px}
+label{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:7px;font-size:12px}
+label>span{color:var(--dim);white-space:nowrap}
+label>b{color:var(--fg);font-weight:500;font-variant-numeric:tabular-nums}
+input[type=range]{width:110px;accent-color:var(--accent)}
+input[type=checkbox]{accent-color:var(--accent)}
+select,input[type=text]{background:#0d1117;color:var(--fg);border:1px solid var(--line);
+  border-radius:4px;padding:3px 6px;font:inherit;font-size:11px;width:130px}
+button{background:#21262d;color:var(--fg);border:1px solid var(--line);border-radius:5px;
+  padding:6px 10px;font:inherit;font-size:12px;cursor:pointer;width:100%}
+button:hover{background:#30363d;border-color:var(--accent)}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;font-size:11px}
+.kv i{color:var(--dim);font-style:normal}
+.kv b{font-weight:500;text-align:right;font-variant-numeric:tabular-nums}
+#status{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--err);margin-right:6px}
+#status.on{background:var(--ok)}
+#hud{position:absolute;right:10px;top:10px;background:rgba(13,17,23,.82);border:1px solid var(--line);
+  border-radius:6px;padding:8px 10px;font-size:11px;pointer-events:none;min-width:150px}
+#hint{position:absolute;left:10px;bottom:10px;color:var(--dim);font-size:11px;pointer-events:none}
+#err{position:absolute;inset:0;display:none;align-items:center;justify-content:center;
+  background:rgba(13,17,23,.9);color:var(--err);font-size:13px;text-align:center;padding:20px;white-space:pre-wrap}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="side">
+    <h1><span id="status"></span>点云查看器</h1>
+    <div class="sub" id="srcline">未连接</div>
+
+    <div class="grp">
+      <h2>连接</h2>
+      <label><span>WS</span><input type="text" id="wsurl"></label>
+      <button id="btn">连接</button>
+    </div>
+
+    <div class="grp">
+      <h2>渲染</h2>
+      <label><span>点大小</span><input type="range" id="psize" min="1" max="8" step="0.5" value="2"><b id="psizev">2</b></label>
+      <label><span>最远距离</span><input type="range" id="maxd" min="0.3" max="10" step="0.1" value="4"><b id="maxdv">4.0m</b></label>
+      <label><span>最近距离</span><input type="range" id="mind" min="0.1" max="1.5" step="0.05" value="0.15"><b id="mindv">0.15m</b></label>
+      <label><span>着色</span>
+        <select id="shade">
+          <option value="depth">深度伪彩</option>
+          <option value="color">相机彩色</option>
+          <option value="height">高度</option>
+          <option value="flat">单色</option>
+        </select></label>
+      <label><span>降采样</span>
+        <select id="stride">
+          <option value="1">1×(全部)</option>
+          <option value="2">2×</option>
+          <option value="3">3×</option>
+        </select></label>
+      <label><span>显示坐标轴</span><input type="checkbox" id="axes" checked></label>
+    </div>
+
+    <div class="grp">
+      <h2>相机内参</h2>
+      <div class="kv" id="intr"><i>等待 meta…</i><b></b></div>
+    </div>
+
+    <div class="grp">
+      <h2>运行时</h2>
+      <div class="kv" id="rt"></div>
+    </div>
+
+    <div class="grp">
+      <h2>温漂</h2>
+      <div class="kv" id="temp"><i>等待…</i><b></b></div>
+      <canvas id="tcv" width="226" height="52"
+              style="width:100%;height:52px;margin:6px 0 8px;border:1px solid var(--line);border-radius:4px;background:#0d1117"></canvas>
+      <div class="kv" id="corr"></div>
+      <label style="margin-top:6px"><span>补偿到点云</span><input type="checkbox" id="tcomp"></label>
+    </div>
+
+    <div class="grp">
+      <h2>视角</h2>
+      <button id="reset">重置视角</button>
+    </div>
+  </div>
+
+  <div id="main">
+    <div id="nav">
+      <button data-p="live" class="on">实时点云</button>
+      <button data-p="calib">标定结果</button>
+      <button data-p="todo">待办</button>
+    </div>
+    <div class="page on" id="page-live">
+    <div id="glwrap">
+      <canvas id="gl"></canvas>
+      <div id="hud"></div>
+      <div id="hint">左键拖动=旋转　右键/中键=平移　滚轮=缩放</div>
+      <div id="err"></div>
+    </div>
+    <div id="bottom">
+      <div class="tile"><span class="lbl">深度图</span><canvas id="dcv"></canvas></div>
+      <div class="tile"><span class="lbl">彩色图</span><img id="cim" alt=""></div>
+      <div class="tile"><span class="lbl">红外 · 散斑帧</span><img id="iim" alt=""></div>
+      <div class="tile"><span class="lbl" id="irclbl">红外 · 干净帧</span><img id="icm" alt=""></div>
+    </div>
+    </div>
+
+    <div class="page" id="page-calib"><div class="wrap">
+      <h2 class="sec">标定结果</h2>
+      <div class="sub2">全部数据来自本机实测。每项下方的核查行是与外部真值或独立测量的对照 ——
+        标定这行最怕的是"看起来漂亮但错得一致",有外部参照才算数。</div>
+      <div id="calibList"></div>
+    </div></div>
+
+    <div class="page" id="page-todo"><div class="wrap">
+      <h2 class="sec">待办</h2>
+      <div class="sub2">这些误差项尚未建模。前三项不需要额外设备,后三项受限于硬件或时间。</div>
+      <div id="todoList"></div>
+    </div></div>
+  </div>
+</div>
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+const T_META=0,T_DEPTH=1,T_COLOR=2,T_POINTS=3,T_STATS=4,T_IR=5;
+
+/* ---------- 极简矩阵 ---------- */
+function mul(a,b){const o=new Float32Array(16);
+  for(let i=0;i<4;i++)for(let j=0;j<4;j++){let s=0;
+    for(let k=0;k<4;k++)s+=a[k*4+j]*b[i*4+k];o[i*4+j]=s;}return o;}
+function persp(fovy,asp,zn,zf){const f=1/Math.tan(fovy/2),o=new Float32Array(16);
+  o[0]=f/asp;o[5]=f;o[10]=(zf+zn)/(zn-zf);o[11]=-1;o[14]=2*zf*zn/(zn-zf);return o;}
+function lookAt(e,c,u){
+  const s=(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]];
+  const cr=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
+  const nz=v=>{const l=Math.hypot(...v)||1;return[v[0]/l,v[1]/l,v[2]/l];};
+  const f=nz(s(c,e)),r=nz(cr(f,u)),up=cr(r,f),o=new Float32Array(16);
+  o[0]=r[0];o[4]=r[1];o[8]=r[2];
+  o[1]=up[0];o[5]=up[1];o[9]=up[2];
+  o[2]=-f[0];o[6]=-f[1];o[10]=-f[2];
+  o[12]=-(r[0]*e[0]+r[1]*e[1]+r[2]*e[2]);
+  o[13]=-(up[0]*e[0]+up[1]*e[1]+up[2]*e[2]);
+  o[14]= (f[0]*e[0]+f[1]*e[1]+f[2]*e[2]);
+  o[15]=1;return o;}
+
+/* ---------- WebGL ---------- */
+const cv=$("gl");
+const gl=cv.getContext("webgl2",{antialias:true,alpha:false});
+if(!gl){$("err").style.display="flex";$("err").textContent="此浏览器不支持 WebGL2。\n点云渲染需要 WebGL2(整数纹理 + gl_VertexID)。";}
+
+const VS=`#version 300 es
+precision highp float; precision highp int; precision highp usampler2D;
+uniform usampler2D uDepth;      // uint16 深度,原样上传,不做任何有损转换
+uniform sampler2D  uColor;
+uniform vec4  uIntr;            // fx, fy, cx, cy  —— 反投影就靠这四个数
+uniform vec2  uSize;            // 深度图尺寸
+uniform float uScale;           // 深度单位 m/LSB
+uniform mat4  uMVP;
+uniform float uPS, uMin, uMax;
+uniform float uDScale;   // 深度尺度补偿 (1+ppm)
+uniform vec2  uDPP;      // 主点补偿 (Δcx, Δcy)
+uniform int   uShade, uStride;
+uniform vec2  uColorSize;
+out vec3 vC; out float vDrop;
+
+vec3 turbo(float t){          // 近似 turbo colormap,比 jet 在暗端更可辨
+  t=clamp(t,0.0,1.0);
+  return clamp(vec3(
+    34.61+t*(1172.33+t*(-10793.56+t*(33300.12+t*(-38394.49+t*14825.05)))),
+    23.31+t*(557.33+t*(1225.33+t*(-3574.96+t*(1073.77+t*707.56)))),
+    27.2 +t*(3211.1+t*(-15327.97+t*(27814.0+t*(-22569.18+t*6838.66))))
+  )/255.0,0.0,1.0);
+}
+void main(){
+  int W=int(uSize.x);
+  int cols=W/uStride;
+  int x=(gl_VertexID%cols)*uStride;
+  int y=(gl_VertexID/cols)*uStride;
+  float d=float(texelFetch(uDepth,ivec2(x,y),0).r)*uScale*uDScale;
+  if(d<uMin||d>uMax){vDrop=1.0;gl_Position=vec4(0,0,-9,1);gl_PointSize=0.0;return;}
+  vDrop=0.0;
+  // 针孔反投影:这一步的正确性完全取决于内参
+  float X=(float(x)-(uIntr.z+uDPP.x))/uIntr.x*d;
+  float Y=(float(y)-(uIntr.w+uDPP.y))/uIntr.y*d;
+  vec4 p=vec4(X,-Y,-d,1.0);        // 相机坐标(y下,z前) -> 观察坐标(y上,z后)
+  gl_Position=uMVP*p;
+  gl_PointSize=uPS;
+  if(uShade==0)       vC=turbo(1.0-(d-uMin)/max(uMax-uMin,1e-6));
+  else if(uShade==1)  vC=texture(uColor,vec2(float(x)/uSize.x,float(y)/uSize.y)).rgb;
+  else if(uShade==2)  vC=turbo(clamp((-Y+0.8)/1.6,0.0,1.0));
+  else                vC=vec3(0.72,0.78,0.86);
+}`;
+const FS=`#version 300 es
+precision highp float;
+in vec3 vC; in float vDrop; out vec4 o;
+void main(){ if(vDrop>0.5) discard;
+  vec2 q=gl_PointCoord-0.5; if(dot(q,q)>0.25) discard;   // 圆点,方点看起来像马赛克
+  o=vec4(vC,1.0); }`;
+
+const AVS=`#version 300 es
+in vec3 aP; in vec3 aC; uniform mat4 uMVP; out vec3 vC;
+void main(){gl_Position=uMVP*vec4(aP,1.0);vC=aC;}`;
+const AFS=`#version 300 es
+precision highp float; in vec3 vC; out vec4 o; void main(){o=vec4(vC,1.0);}`;
+
+function sh(type,src){const s=gl.createShader(type);gl.shaderSource(s,src);gl.compileShader(s);
+  if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(s));return s;}
+function prog(vs,fs){const p=gl.createProgram();
+  gl.attachShader(p,sh(gl.VERTEX_SHADER,vs));gl.attachShader(p,sh(gl.FRAGMENT_SHADER,fs));
+  gl.linkProgram(p);if(!gl.getProgramParameter(p,gl.LINK_STATUS))throw new Error(gl.getProgramInfoLog(p));return p;}
+
+let P1,P2,texD,texC,axVao,axN=0,U={};
+try{
+  P1=prog(VS,FS); P2=prog(AVS,AFS);
+  ["uDepth","uColor","uIntr","uSize","uScale","uMVP","uPS","uMin","uMax","uShade","uStride","uColorSize","uDScale","uDPP"]
+    .forEach(n=>U[n]=gl.getUniformLocation(P1,n));
+  U.aMVP=gl.getUniformLocation(P2,"uMVP");
+  texD=gl.createTexture(); texC=gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D,texC);
+  [[gl.TEXTURE_MIN_FILTER,gl.LINEAR],[gl.TEXTURE_MAG_FILTER,gl.LINEAR],
+   [gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE],[gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE]]
+   .forEach(([k,v])=>gl.texParameteri(gl.TEXTURE_2D,k,v));
+  gl.bindTexture(gl.TEXTURE_2D,texD);
+  [[gl.TEXTURE_MIN_FILTER,gl.NEAREST],[gl.TEXTURE_MAG_FILTER,gl.NEAREST],
+   [gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE],[gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE]]
+   .forEach(([k,v])=>gl.texParameteri(gl.TEXTURE_2D,k,v));
+
+  // 坐标轴 + 1m 网格
+  const L=[],C=[];
+  const ax=[[1,0,0,[.9,.3,.3]],[0,1,0,[.3,.9,.4]],[0,0,1,[.4,.6,1]]];
+  ax.forEach(([x,y,z,c])=>{L.push(0,0,0, x*.4,y*.4,z*.4);C.push(...c,...c);});
+  for(let i=-3;i<=3;i++){const g=[.22,.24,.28];
+    L.push(i*.5,-0.6,-3, i*.5,-0.6,3); C.push(...g,...g);
+    L.push(-3,-0.6,i*.5, 3,-0.6,i*.5); C.push(...g,...g);}
+  axN=L.length/3;
+  axVao=gl.createVertexArray(); gl.bindVertexArray(axVao);
+  const b1=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,b1);
+  gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(L),gl.STATIC_DRAW);
+  const la=gl.getAttribLocation(P2,"aP");gl.enableVertexAttribArray(la);gl.vertexAttribPointer(la,3,gl.FLOAT,false,0,0);
+  const b2=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,b2);
+  gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(C),gl.STATIC_DRAW);
+  const lc=gl.getAttribLocation(P2,"aC");gl.enableVertexAttribArray(lc);gl.vertexAttribPointer(lc,3,gl.FLOAT,false,0,0);
+  gl.bindVertexArray(null);
+}catch(e){ $("err").style.display="flex"; $("err").textContent="着色器编译失败:\n"+e.message; }
+
+/* ---------- 状态 ---------- */
+const S={meta:null,dw:0,dh:0,scale:0.001,hasD:false,hasC:false,
+  yaw:0.6,pitch:0.35,dist:3.2,tx:0,ty:0,
+  fpsD:0,fpsC:0,lastD:0,lastC:0,pts:0,valid:0,rx:0,
+  corr:null,hasModel:false,thist:[],fpsI:0,lastI:0,fpsIC:0,lastIC:0,sawClean:false};
+function resetView(){S.yaw=0.6;S.pitch=0.35;S.dist=3.2;S.tx=0;S.ty=0;}
+
+/* ---------- 交互 ---------- */
+let drag=null;
+cv.addEventListener("mousedown",e=>{drag={b:e.button,x:e.clientX,y:e.clientY};e.preventDefault();});
+addEventListener("mouseup",()=>drag=null);
+addEventListener("mousemove",e=>{
+  if(!drag)return;
+  const dx=e.clientX-drag.x,dy=e.clientY-drag.y;drag.x=e.clientX;drag.y=e.clientY;
+  if(drag.b===0){S.yaw+=dx*0.006;S.pitch=Math.max(-1.5,Math.min(1.5,S.pitch+dy*0.006));}
+  else{S.tx-=dx*0.003*S.dist;S.ty+=dy*0.003*S.dist;}
+});
+cv.addEventListener("contextmenu",e=>e.preventDefault());
+cv.addEventListener("wheel",e=>{S.dist=Math.max(0.3,Math.min(30,S.dist*Math.exp(e.deltaY*0.0012)));e.preventDefault();},{passive:false});
+$("reset").onclick=resetView;
+
+const bind=(id,vid,fmt)=>{const el=$(id),o=$(vid);
+  const f=()=>o.textContent=fmt?fmt(+el.value):el.value; el.oninput=f; f(); return el;};
+const elPS=bind("psize","psizev"),
+      elMax=bind("maxd","maxdv",v=>v.toFixed(1)+"m"),
+      elMin=bind("mind","mindv",v=>v.toFixed(2)+"m");
+
+/* ---------- 深度图 2D ---------- */
+const dcv=$("dcv"),dctx=dcv.getContext("2d");
+let dimg=null;
+function drawDepth(u16,w,h,scale){
+  if(dcv.width!==w||dcv.height!==h){dcv.width=w;dcv.height=h;dimg=dctx.createImageData(w,h);}
+  const mn=+elMin.value,mx=+elMax.value,px=dimg.data;
+  let valid=0;
+  for(let i=0,j=0;i<u16.length;i++,j+=4){
+    const d=u16[i]*scale;
+    if(d<mn||d>mx){px[j]=8;px[j+1]=10;px[j+2]=14;px[j+3]=255;continue;}
+    valid++;
+    const t=1-(d-mn)/(mx-mn), q=Math.max(0,Math.min(1,t));
+    px[j]  =Math.max(0,Math.min(255,34.6+q*(1172+q*(-10794+q*(33300+q*(-38394+q*14825))))));
+    px[j+1]=Math.max(0,Math.min(255,23.3+q*(557+q*(1225+q*(-3575+q*(1074+q*708))))));
+    px[j+2]=Math.max(0,Math.min(255,27.2+q*(3211+q*(-15328+q*(27814+q*(-22569+q*6839))))));
+    px[j+3]=255;
+  }
+  S.valid=valid/u16.length;
+  dctx.putImageData(dimg,0,0);
+}
+
+/* ---------- 导航 ---------- */
+document.querySelectorAll('#nav button').forEach(b=>{
+  b.onclick=()=>{
+    document.querySelectorAll('#nav button').forEach(x=>x.classList.toggle('on',x===b));
+    document.querySelectorAll('.page').forEach(p=>p.classList.toggle('on',p.id==='page-'+b.dataset.p));
+  };
+});
+
+function renderCalib(c){
+  if(!c) return;
+  const esc=t=>String(t).replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));
+  $("calibList").innerHTML = c.stages.map(s=>`
+    <div class="card">
+      <h3>${esc(s.name)}
+        <span class="st ${s.status}">${s.status==='done'?'已完成':'待做'}</span>
+        <span style="color:var(--dim);font-size:11px;font-weight:400">${esc(s.stage)}</span></h3>
+      <div class="src">${esc(s.source)}</div>
+      ${s.rows.length?`<table>${s.rows.map(r=>
+        `<tr><td>${esc(r[0])}</td><td>${esc(r[1])}</td></tr>`).join('')}</table>`:''}
+      ${s.checks.map(k=>`<div class="chk ${k[2]}"><i>${
+        k[2]==='ok'?'✓':k[2]==='warn'?'!':'✗'}</i><b>${esc(k[0])} — <em>${esc(k[1])}</em></b></div>`).join('')}
+      <div class="note">${esc(s.note)}</div>
+    </div>`).join('');
+  $("todoList").innerHTML = c.pending.map(t=>`
+    <div class="card">
+      <h3>${esc(t.name)}<span class="st pending">待做</span>
+        <span style="color:var(--dim);font-size:11px;font-weight:400">${esc(t.cost)}</span></h3>
+      <table>
+        <tr><td>为什么要做</td><td>${esc(t.why)}</td></tr>
+        <tr><td>怎么做</td><td>${esc(t.how)}</td></tr>
+      </table>
+    </div>`).join('');
+}
+
+/* ---------- 温度曲线 ---------- */
+const tcv=$("tcv"),tctx=tcv.getContext("2d");
+function drawTemp(){
+  const w=tcv.width,h=tcv.height,d=S.thist;
+  tctx.clearRect(0,0,w,h);
+  if(d.length<2)return;
+  const lo=Math.min(...d)-0.5, hi=Math.max(...d)+0.5, rng=Math.max(hi-lo,1);
+  tctx.strokeStyle="#58a6ff"; tctx.lineWidth=1.5; tctx.beginPath();
+  const n=d.length;
+  d.forEach((v,i)=>{
+    const px=(i/Math.max(n-1,1))*(w-2)+1;
+    const py=h-2-((v-lo)/rng)*(h-4);
+    i?tctx.lineTo(px,py):tctx.moveTo(px,py);
+  });
+  tctx.stroke();
+  tctx.fillStyle="#8b949e"; tctx.font="9px monospace";
+  tctx.fillText(hi.toFixed(1)+"°",3,10);
+  tctx.fillText(lo.toFixed(1)+"°",3,h-4);
+}
+
+/* ---------- WebSocket ---------- */
+let ws=null;
+$("wsurl").value = `ws://${location.hostname||"localhost"}:9002`;
+function setStatus(on,txt){$("status").classList.toggle("on",on);$("srcline").textContent=txt;}
+function connect(){
+  if(ws){try{ws.close()}catch(e){} ws=null;}
+  const url=$("wsurl").value;
+  setStatus(false,"连接中…");
+  ws=new WebSocket(url); ws.binaryType="arraybuffer";
+  ws.onopen=()=>{setStatus(true,"已连接");$("btn").textContent="断开";};
+  ws.onclose=()=>{setStatus(false,"已断开");$("btn").textContent="连接";ws=null;};
+  ws.onerror=()=>setStatus(false,"连接失败 —— server.py 起来了吗?");
+  ws.onmessage=ev=>{
+    const buf=ev.data, dv=new DataView(buf), type=dv.getUint8(0);
+    if(type===T_META){
+      S.meta=JSON.parse(new TextDecoder().decode(new Uint8Array(buf,1)));
+      const d=S.meta.depth;
+      S.scale=S.meta.depth_scale;
+      renderCalib(S.meta.calib);
+      setStatus(true,`${S.meta.source} · ${d.width}×${d.height}`+(S.meta.usb?` · USB${S.meta.usb}`:""));
+      $("intr").innerHTML=
+        `<i>fx</i><b>${d.fx.toFixed(2)}</b><i>fy</i><b>${d.fy.toFixed(2)}</b>`+
+        `<i>cx</i><b>${d.cx.toFixed(2)}</b><i>cy</i><b>${d.cy.toFixed(2)}</b>`+
+        `<i>单位</i><b>${(S.scale*1000).toFixed(3)}mm</b>`+
+        (S.meta.color_source==='our_calibration'?`<i>彩色</i><b style="color:var(--ok)">自标定</b>`:"");
+    } else if(type===T_DEPTH){
+      // 头 24 字节: type(1) pad(3) w(2) h(2) seq(4) t(8) scale(4)
+      const w=dv.getUint16(4),h=dv.getUint16(6),sc=dv.getFloat32(20);
+      const u16=new Uint16Array(buf,24,w*h);
+      S.dw=w;S.dh=h;S.scale=sc;S.hasD=true;
+      gl.bindTexture(gl.TEXTURE_2D,texD);
+      gl.pixelStorei(gl.UNPACK_ALIGNMENT,2);
+      gl.texImage2D(gl.TEXTURE_2D,0,gl.R16UI,w,h,0,gl.RED_INTEGER,gl.UNSIGNED_SHORT,u16);
+      drawDepth(u16,w,h,sc);
+      const t=performance.now(); if(S.lastD)S.fpsD=0.8*S.fpsD+0.2*(1000/(t-S.lastD)); S.lastD=t;
+    } else if(type===T_COLOR){
+      // 头 20 字节: type(1) pad(3) w(2) h(2) seq(4) t(8)
+      const blob=new Blob([new Uint8Array(buf,20)],{type:"image/jpeg"});
+      createImageBitmap(blob).then(bm=>{
+        gl.bindTexture(gl.TEXTURE_2D,texC);
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);
+        gl.texImage2D(gl.TEXTURE_2D,0,gl.RGB,gl.RGB,gl.UNSIGNED_BYTE,bm);
+        S.hasC=true; bm.close();
+      });
+      const u=URL.createObjectURL(blob);
+      const im=$("cim"); const old=im.src; im.src=u;
+      if(old&&old.startsWith("blob:"))URL.revokeObjectURL(old);
+      const t=performance.now(); if(S.lastC)S.fpsC=0.8*S.fpsC+0.2*(1000/(t-S.lastC)); S.lastC=t;
+    } else if(type===T_IR){
+      // IR 原图:唯一能看到散斑的视图。发射器开着时满屏白点即是散斑,
+      // 它们锚定在相机上而非世界上 —— 这正是不能拿 IR 做特征跟踪的原因。
+      // 头 20 字节: type(1) laser_on(1) pad(2) w(2) h(2) seq(4) t(8)
+      const laser=dv.getUint8(1);
+      const blob=new Blob([new Uint8Array(buf,20)],{type:"image/jpeg"});
+      const u=URL.createObjectURL(blob);
+      const im=$(laser?"iim":"icm"); const old=im.src; im.src=u;
+      if(old&&old.startsWith("blob:"))URL.revokeObjectURL(old);
+      const t=performance.now();
+      if(laser){ if(S.lastI)S.fpsI=0.8*S.fpsI+0.2*(1000/(t-S.lastI)); S.lastI=t; }
+      else     { if(S.lastIC)S.fpsIC=0.8*S.fpsIC+0.2*(1000/(t-S.lastIC)); S.lastIC=t;
+                 S.sawClean=true; }
+      if(!S.sawClean) $("irclbl").textContent="红外 · 干净帧(需开交替模式)";
+    } else if(type===T_STATS){
+      const st=JSON.parse(new TextDecoder().decode(new Uint8Array(buf,1)));
+      const streams=st.streams||{};
+      $("rt").innerHTML=Object.entries(streams)
+        .map(([k,v])=>`<i>${k}</i><b>${v.fps.toFixed(1)} fps</b>`).join("");
+      S.hasModel=!!st.has_thermal_model;
+      const tp=st.temps;
+      if(tp){
+        $("temp").innerHTML=
+          `<i>ASIC</i><b>${tp.asic!=null?tp.asic.toFixed(1)+" °C":"—"}</b>`+
+          `<i>Projector</i><b>${tp.projector!=null?tp.projector.toFixed(1)+" °C":"—"}</b>`;
+        if(tp.asic!=null){
+          S.thist.push(tp.asic);
+          if(S.thist.length>226) S.thist.shift();
+          drawTemp();
+        }
+      }
+      S.corr=st.thermal||null;
+      if(!S.hasModel){
+        $("corr").innerHTML=`<i>模型</i><b style="color:var(--warn)">未标定</b>`;
+        $("tcomp").disabled=true;
+      } else if(S.corr){
+        const c=S.corr;
+        const f=(v,d)=>v==null?"—":(v>=0?"+":"")+v.toFixed(d);
+        $("corr").innerHTML=
+          `<i>ΔT (基准 ${c.T_ref.toFixed(0)}°C)</i><b>${f(c.dT,1)} °C</b>`+
+          `<i>深度尺度</i><b>${f(c.depth_ppm,0)} ppm</b>`+
+          `<i>@ 1 m</i><b>${f((c.depth_ppm||0)*1e-3,3)} mm</b>`+
+          `<i>主点 Δcx</i><b>${f(c.dcx_px,3)} px</b>`+
+          `<i>主点 Δcy</i><b>${f(c.dcy_px,3)} px</b>`+
+          `<i>焦距</i><b>${f(c.focal_ppm,0)} ppm</b>`+
+          (c.gyro_bias?`<i>陀螺零偏 x</i><b>${f(c.gyro_bias.x,4)} °/s</b>`:"");
+        $("tcomp").disabled=false;
+      }
+    }
+  };
+}
+$("btn").onclick=()=>{ if(ws)ws.close(); else connect(); };
+const STATIC = new URLSearchParams(location.search).has('static');
+if(STATIC){
+  // 静态模式:只渲染标定页,便于截图核对排版(WebGL 循环会让页面永不 load 完成)
+  fetch('/calib.json').then(r=>r.json()).then(c=>{
+    renderCalib(c);
+    const want = (location.hash || '#calib').slice(1);
+    const btn = document.querySelector(`#nav button[data-p="${want}"]`)
+             || document.querySelector('#nav button[data-p="calib"]');
+    btn.click();
+    setStatus(false,'静态模式(无实时流)');
+  }).catch(e=>setStatus(false,'读取 /calib.json 失败'));
+}else{
+  connect();
+}
+
+/* ---------- 渲染循环 ---------- */
+function frame(){
+  if(STATIC) return;          // 静态模式不跑渲染循环
+  requestAnimationFrame(frame);
+  if(!gl)return;
+  const dpr=Math.min(devicePixelRatio||1,2);
+  const w=Math.floor(cv.clientWidth*dpr),h=Math.floor(cv.clientHeight*dpr);
+  if(cv.width!==w||cv.height!==h){cv.width=w;cv.height=h;}
+  gl.viewport(0,0,w,h);
+  gl.clearColor(0.02,0.027,0.039,1);
+  gl.enable(gl.DEPTH_TEST);
+  gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+
+  const cx=Math.cos(S.pitch)*Math.sin(S.yaw)*S.dist,
+        cy=Math.sin(S.pitch)*S.dist,
+        cz=Math.cos(S.pitch)*Math.cos(S.yaw)*S.dist;
+  const tgt=[S.tx,S.ty,-1.2];
+  const V=lookAt([tgt[0]+cx,tgt[1]+cy,tgt[2]+cz],tgt,[0,1,0]);
+  const MVP=mul(persp(50*Math.PI/180,w/h,0.05,100),V);
+
+  if($("axes").checked&&axN){
+    gl.useProgram(P2);gl.uniformMatrix4fv(U.aMVP,false,MVP);
+    gl.bindVertexArray(axVao);gl.drawArrays(gl.LINES,0,axN);gl.bindVertexArray(null);
+  }
+  if(S.hasD){
+    const stride=+$("stride").value;
+    const cols=Math.floor(S.dw/stride),rows=Math.floor(S.dh/stride);
+    S.pts=cols*rows;
+    gl.useProgram(P1);
+    gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,texD);gl.uniform1i(U.uDepth,0);
+    gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,texC);gl.uniform1i(U.uColor,1);
+    const d=S.meta?S.meta.depth:{fx:400,fy:400,cx:S.dw/2,cy:S.dh/2};
+    gl.uniform4f(U.uIntr,d.fx,d.fy,d.cx,d.cy);
+    gl.uniform2f(U.uSize,S.dw,S.dh);
+    gl.uniform1f(U.uScale,S.scale);
+    gl.uniformMatrix4fv(U.uMVP,false,MVP);
+    gl.uniform1f(U.uPS,+elPS.value*dpr);
+    gl.uniform1f(U.uMin,+elMin.value);
+    gl.uniform1f(U.uMax,+elMax.value);
+    gl.uniform1i(U.uStride,stride);
+    gl.uniform1i(U.uShade,{depth:0,color:1,height:2,flat:3}[$("shade").value]);
+    const on=$("tcomp").checked && S.corr;
+    gl.uniform1f(U.uDScale, on ? 1.0+(S.corr.depth_ppm||0)*1e-6 : 1.0);
+    gl.uniform2f(U.uDPP, on?(S.corr.dcx_px||0):0, on?(S.corr.dcy_px||0):0);
+    gl.drawArrays(gl.POINTS,0,S.pts);
+  }
+  $("hud").innerHTML =
+    `深度 <b>${S.fpsD.toFixed(1)}</b> fps<br>`+
+    `彩色 <b>${S.fpsC.toFixed(1)}</b> fps<br>`+
+    `红外散斑 <b>${S.fpsI.toFixed(1)}</b> fps<br>`+
+    `红外干净 <b>${S.fpsIC.toFixed(1)}</b> fps<br>`+
+    `点数 <b>${S.pts.toLocaleString()}</b><br>`+
+    `有效 <b>${(S.valid*100).toFixed(1)}%</b>`;
+}
+frame();
+</script>
+</body>
+</html>

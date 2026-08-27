@@ -1,0 +1,108 @@
+{
+  "note": "阶段3 深度质量核查。两轮:第一轮手持(时域噪声不可信),第二轮相机固定。",
+  "depth_resolution": [
+    848,
+    480
+  ],
+  "depth_scale_m": 0.001,
+  "emitter": "on",
+  "rounds": [
+    {
+      "name": "handheld",
+      "camera_fixed": false,
+      "avg_frames": 30,
+      "shots": [
+        {
+          "dist_m": 0.271,
+          "plane_rms_mm": 0.6,
+          "temporal_noise_mm": 17.9,
+          "inlier_pct": 100.0
+        },
+        {
+          "dist_m": 0.353,
+          "plane_rms_mm": 0.76,
+          "temporal_noise_mm": 8.85,
+          "inlier_pct": 100.0
+        },
+        {
+          "dist_m": 0.595,
+          "plane_rms_mm": 1.72,
+          "temporal_noise_mm": 8.96,
+          "inlier_pct": 100.0
+        },
+        {
+          "dist_m": 0.708,
+          "plane_rms_mm": 2.25,
+          "temporal_noise_mm": 11.29,
+          "inlier_pct": 99.5
+        },
+        {
+          "dist_m": 0.818,
+          "plane_rms_mm": 2.69,
+          "temporal_noise_mm": 33.08,
+          "inlier_pct": 94.9
+        },
+        {
+          "dist_m": 0.921,
+          "plane_rms_mm": 2.71,
+          "temporal_noise_mm": 23.94,
+          "inlier_pct": 82.7
+        }
+      ],
+      "fit": {
+        "disparity_noise_px": 0.07599016951762609,
+        "target_flatness_mm": 0.704118868136949,
+        "a": 0.0035890128709973124
+      }
+    },
+    {
+      "name": "fixed",
+      "camera_fixed": true,
+      "avg_frames": 20,
+      "shots": [
+        {
+          "dist_m": 0.382,
+          "plane_rms_mm": 0.83,
+          "temporal_noise_mm": 0.68,
+          "inlier_pct": 100.0
+        },
+        {
+          "dist_m": 0.553,
+          "plane_rms_mm": 1.56,
+          "temporal_noise_mm": 1.77,
+          "inlier_pct": 94.8
+        },
+        {
+          "dist_m": 0.719,
+          "plane_rms_mm": 2.42,
+          "temporal_noise_mm": 3.32,
+          "inlier_pct": 80.8
+        },
+        {
+          "dist_m": 0.834,
+          "plane_rms_mm": 2.74,
+          "temporal_noise_mm": 4.86,
+          "inlier_pct": 69.5
+        }
+      ],
+      "fit": {
+        "disparity_noise_px": 0.0860168700331847,
+        "target_flatness_mm": 0.7244111249586698,
+        "a": 0.004062573562234199
+      }
+    }
+  ],
+  "model": "plane_rms^2 = (a*z^2)^2 + flatness^2 ;  a = disparity_noise/(baseline*focal)",
+  "baseline_m": 0.05,
+  "focal_px_848x480": 423.46,
+  "extrapolation_mm": {
+    "1.0": 4.1,
+    "1.5": 9.1,
+    "2.0": 16.3,
+    "3.0": 36.6,
+    "4.0": 65.0
+  },
+  "systematic_distortion": "none observed (残差图为均匀随机噪点,无同心圆/条纹)",
+  "noise_spatial_correlation_px": "10~20",
+  "caveat": "远距离 shot 的 inlier 下降是 ROI 越过目标边界所致,非传感器问题"
+}

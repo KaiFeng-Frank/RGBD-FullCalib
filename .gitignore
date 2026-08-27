@@ -1,0 +1,13 @@
+# 原始采集数据(GB 级,不进版本库;判决产物 yaml/txt 保留)
+data/*.bag
+data/*.npz
+data/*-report-*.pdf
+data/*_frames/
+logs/
+# 上游 Kalibr 源码(用 Docker 构建,见 kalibr.sh)
+kalibr/
+# 运行时产物
+__pycache__/
+*.pyc
+ffprof_tmp/
+results/attempt1_stereo_undercovered/
