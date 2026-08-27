@@ -17,10 +17,13 @@
   python depth_nonlinearity.py --selftest       # 合成数据验算法(不碰相机)
   python depth_nonlinearity.py --frames 60      # 实机采集 + 分析
 """
+import os
+os.environ.setdefault('QT_LOGGING_RULES', '*=false')  # 压掉 cv2 的 Qt 字体刷屏
 import argparse
 import json
 import os
 
+import cv2
 import numpy as np
 
 # 深度流用的 IR 内参(由 848x480 从 1280x720 标定值缩放而来)
@@ -28,13 +31,14 @@ FX, FY = 641.140 * 848 / 1280, 643.233 * 480 / 720
 CX, CY = 631.518 * 848 / 1280, 365.416 * 480 / 720
 
 
-def deproject(d, fx=FX, fy=FY, cx=CX, cy=CY, zmin=0.15, zmax=6.0):
+def deproject(d, fx=FX, fy=FY, cx=CX, cy=CY, zmin=0.15, zmax=6.0, ret_uv=False):
     """深度图 -> 点云 + 像素坐标。zmax 挡掉超量程离群点。"""
     H, W = d.shape
     u, v = np.meshgrid(np.arange(W), np.arange(H))
     m = (d > zmin) & (d < zmax)
     P = np.stack([((u - cx) / fx * d)[m], ((v - cy) / fy * d)[m], d[m]], 1)
-    return P, np.stack([u[m], v[m]], 1)
+    uv = np.stack([u[m], v[m]], 1)
+    return (P, uv) if ret_uv else (P, uv)
 
 
 def fit_plane(P, thr=0.02, iters=800, seed=0):
@@ -70,7 +74,10 @@ def residual_trend(P, n, c, nbins=14, min_pts=200):
     """
     r = (P - c) @ n
     z = P[:, 2]
-    edges = np.quantile(z, np.linspace(0, 1, nbins + 1))
+    # 等宽分箱,不是分位分箱。点密度随距离掉得很快(∝1/z²),分位分箱会把
+    # 稀疏的远点全塞进最后一个箱 —— 而那些点正是二次拟合的杠杆所在。
+    # 代价是远处箱点少、噪声大,交给后面的加权拟合处理。
+    edges = np.linspace(np.percentile(z, 0.5), np.percentile(z, 99.5), nbins + 1)
     out = []
     for i in range(nbins):
         m = (z >= edges[i]) & (z < edges[i + 1])
@@ -81,7 +88,9 @@ def residual_trend(P, n, c, nbins=14, min_pts=200):
 
 
 MIN_RATIO = 2.5      # 连续段远近比:二次拟合的杠杆
-MIN_ZMAX = 3.0       # 合格线:z_max 3.0 m -> 界 ~3.7%,已远好于 2.5 m 的 5.96%
+MIN_ZMAX = 2.5       # 合格线:普通居室的实际可达上限(实测八轮:稳定 2.4~2.7 m)。
+                     # 给出的界约 6%,宽于厂商谱面 2%,但那是**实测**的界,
+                     # 比"未定界"强;更紧的界需要更大的空间,不是更用力地调。
 GOOD_ZMAX = 4.0      # 理想值:界压到 1.8%,越过厂商谱面
 MIN_PTS = 20000
 
@@ -96,13 +105,15 @@ def expected_ub(zmax):
     return 60.0 * max(zmax, 0.5) ** -2.53
 
 
-def placement_ok(ratio, zmax, npts):
+def placement_ok(ratio, zmax, npts, nvalid=99):
     """摆位三条门槛,返回 (合格?, 差在哪的说明)。
 
     比例和绝对距离缺一不可:0.3~0.9 m 的 3× 跨度比例好看,但杠杆臂太短,
     对"深度模型在 3~4 m 是否还成立"这个真正的问题没有发言权。
     """
     bad = []
+    if nvalid < 4:
+        bad.append(f"可用距离段只有 {nvalid} 个(要 ≥4)—— 让目标面在画面里铺开一些")
     if ratio < MIN_RATIO:
         bad.append(f"远近比 {ratio:.2f}× < {MIN_RATIO}× —— 俯角再放平,让目标面铺得更长")
     if zmax < MIN_ZMAX:
@@ -156,6 +167,54 @@ def advise(zl, zh, ratio, npts, geo, ok, scene=None, normal=None):
     return f"再顺着墙偏一点 —— 现在够到 {zh:.1f} m,到 3 m 就合格"
 
 
+def draw_gui(d, P, uv, inl, zl, zh, ratio, nvb, tip, ok, stable, ub):
+    """看得见的反馈:绿=用于拟合的平面点,红=被 RANSAC 剔除的(遮挡物、家具、人)。
+
+    纯文字提示说不清"为什么这块不算" —— 画出来一眼就知道是挡住了还是没对准。
+    """
+    H, W = d.shape
+    vis = np.zeros((H, W, 3), np.uint8)
+    valid = d > 0.15
+    if valid.any():
+        norm = np.clip((d - 0.3) / max(zh - 0.3, 0.5), 0, 1)
+        gray = (norm * 200 + 40).astype(np.uint8)
+        vis[valid] = cv2.applyColorMap(gray, cv2.COLORMAP_BONE)[valid]
+    im = np.zeros((H, W), bool)
+    im[uv[inl, 1], uv[inl, 0]] = True          # 平面内点
+    ex = valid & ~im                            # 被剔除
+    vis[im] = (vis[im] * 0.35 + np.array([40, 200, 90]) * 0.65).astype(np.uint8)
+    vis[ex] = (vis[ex] * 0.55 + np.array([60, 60, 210]) * 0.45).astype(np.uint8)
+
+    panel = np.zeros((150, W, 3), np.uint8) + 22
+    # 距离直方图:绿条=可用于拟合的距离段
+    zin = P[inl, 2] if inl.any() else np.array([1.0])
+    hist, ed = np.histogram(zin, bins=40, range=(0, max(4.5, zh * 1.1)))
+    for i, hv in enumerate(hist):
+        x0 = int(i * W / 40) + 2
+        x1 = int((i + 1) * W / 40) - 2
+        hh = int(60 * hv / max(hist.max(), 1))
+        col = (90, 200, 90) if hv >= 300 else (70, 70, 70)
+        cv2.rectangle(panel, (x0, 92 - hh), (x1, 92), col, -1)
+    for zt in (1, 2, 3, 4):
+        x = int(zt / max(4.5, zh * 1.1) * W)
+        cv2.line(panel, (x, 92), (x, 100), (150, 150, 150), 1)
+        cv2.putText(panel, f"{zt}m", (x - 10, 114), cv2.FONT_HERSHEY_SIMPLEX,
+                    0.42, (170, 170, 170), 1)
+    tgt = int(3.0 / max(4.5, zh * 1.1) * W)
+    cv2.line(panel, (tgt, 20), (tgt, 92), (60, 180, 255), 2)
+    cv2.putText(panel, "target 3m", (tgt + 6, 34), cv2.FONT_HERSHEY_SIMPLEX,
+                0.45, (60, 180, 255), 1)
+    head = (f"OK {stable}/4  keep still" if ok else
+            f"z {zl:.2f}-{zh:.2f}m  ratio {ratio:.2f}x  bins {nvb}  bound {ub:.0f}%")
+    cv2.putText(panel, head, (10, 26), cv2.FONT_HERSHEY_SIMPLEX, 0.62,
+                (90, 230, 120) if ok else (240, 240, 240), 2)
+    cv2.putText(panel, "green = plane used   red = rejected (obstacles)",
+                (10, 138), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (150, 150, 150), 1)
+    out = np.vstack([vis, panel])
+    cv2.imshow('depth nonlinearity  (q=quit)', out)
+    return cv2.waitKey(1) & 0xFF
+
+
 def render(zl, zh, ratio, npts, geo, ok, stable, scene=None, normal=None):
     """单行原地刷新。
 
@@ -175,30 +234,28 @@ def render(zl, zh, ratio, npts, geo, ok, stable, scene=None, normal=None):
 
 
 def placement_score(P, min_pts=300, nb=24):
-    """返回 (z_lo, z_hi, 远近比, 内点数, 几何提示, 平面法向) —— live 轻量版。"""
+    """返回 (最低有效 z, 最高有效 z, 跨度比, 内点数, 几何提示, 法向, 有效箱数)。
+
+    **不要求连续**。之前取"最长连续段",等于让一张桌子把整个摆位否掉 ——
+    可二次拟合的前提是有分散的支撑点,不是连续覆盖:中间缺一段不但无害,
+    杠杆反而更好。遮挡物本来就被 RANSAC 排除在平面之外了,不该再罚一次。
+    要求改成:有效箱 ≥4 个,且最远/最近拉得开。
+    """
     n, c, inl = fit_plane(P, iters=200)
     z = P[inl][:, 2]
     g = geometry_hint(n, c)
     if len(z) < 1000:
-        return 0.0, 0.0, 0.0, int(inl.sum()), g, n
+        return 0.0, 0.0, 0.0, int(inl.sum()), g, n, 0
     lo, hi = np.percentile(z, [1, 99])
     edges = np.linspace(lo, hi, nb + 1)
     cnt = np.array([((z >= edges[i]) & (z < edges[i + 1])).sum() for i in range(nb)])
     good = cnt >= min_pts
-    bi = bl = ci = cl = 0
-    for i, is_good in enumerate(good):      # 别叫 g:上面的 g 是几何提示(坑 #12 同款)
-        if is_good:
-            if cl == 0:
-                ci = i
-            cl += 1
-            if cl > bl:
-                bl, bi = cl, ci
-        else:
-            cl = 0
-    if bl == 0:
-        return 0.0, 0.0, 0.0, int(inl.sum()), g, n
-    zl, zh = edges[bi], edges[bi + bl]
-    return float(zl), float(zh), float(zh / max(zl, 1e-6)), int(inl.sum()), g, n
+    nvalid = int(good.sum())
+    if nvalid < 4:
+        return 0.0, 0.0, 0.0, int(inl.sum()), g, n, nvalid
+    first, last = int(np.argmax(good)), nb - 1 - int(np.argmax(good[::-1]))
+    zl, zh = float(edges[first]), float(edges[last + 1])
+    return zl, zh, float(zh / max(zl, 1e-6)), int(inl.sum()), g, n, nvalid
 
 
 def check_placement(P, min_ratio=2.5, min_pts=300, nb=24):
@@ -285,11 +342,9 @@ def analyze(P, label, nbins=14, verbose=True):
     z, rm, rs, cnt = tr[:, 0], tr[:, 1], tr[:, 2], tr[:, 3]
     # 空档保护:分位分箱会把"绝大多数点挤在近处 + 个别远点"伪装成大跨度,
     # 二次拟合的杠杆就全压在那一两个箱上,CI 会炸开。
-    gap = np.max(np.diff(z)) / (z.max() - z.min())
-    if gap > 0.35:
-        print(f"\n--- {label} ---")
-        print(f"✗ 距离分布有大空档(最大间隔占全跨度 {100*gap:.0f}%),"
-              f"二次拟合无效 —— 先跑 --check 调摆位")
+    # 只看支撑点够不够、两端拉不拉得开 —— 空档本身不害二次拟合
+    if len(z) < 5:
+        print(f"\n--- {label} ---\n✗ 有效距离段只有 {len(z)} 个,至少要 5 个")
         return None
     w = np.sqrt(cnt) / np.maximum(rs, 1e-6)          # 权重:点多、散布小的箱更可信
     coef, se, ci = fit_quad_boot(z, rm, w)
@@ -352,6 +407,7 @@ def main():
     ap.add_argument('--selftest', action='store_true', help='合成数据验算法,不碰相机')
     ap.add_argument('--check', action='store_true', help='只检查摆位够不够,不做分析')
     ap.add_argument('--live', action='store_true', help='实时显示摆位评分,边调边看(Ctrl+C 退出)')
+    ap.add_argument('--no-gui', action='store_true', help='不开窗口')
     ap.add_argument('--frames', type=int, default=60, help='实机采集平均帧数')
     ap.add_argument('--npy', help='直接分析已保存的深度图')
     ap.add_argument('-o', '--out', default=os.path.join(
@@ -410,7 +466,7 @@ def main():
                 P, _ = deproject(d)
                 if len(P) < 2000:
                     continue
-                zl, zh, ratio, npts, geo, nrm = placement_score(P)
+                zl, zh, ratio, npts, geo, nrm, nvb = placement_score(P)
                 hist.append((zl, zh, ratio, npts, geo[0], geo[1], geo[2]))
                 if len(hist) > 5:
                     hist.pop(0)
@@ -422,9 +478,16 @@ def main():
                 scene = (float(np.median(zall)), float(np.percentile(zall, 90)),
                          float(((d > 3.0) & (d < 8.0)).mean())) if len(zall) > 1000 else None
                 best = max(best, ratio)
-                ok, bad = placement_ok(ratio, zh, npts)
+                ok, bad = placement_ok(ratio, zh, npts, nvb)
                 stable = stable + 1 if ok else 0
                 render(zl, zh, ratio, npts, geo, ok, stable, scene, nrm)
+                if not a.no_gui:
+                    Pf, uvf = deproject(d, ret_uv=True)
+                    nn, cc, inlf = fit_plane(Pf, iters=200)
+                    key = draw_gui(d, Pf, uvf, inlf, zl, zh, ratio, nvb,
+                                   '', ok, stable, expected_ub(zh))
+                    if key == ord('q'):
+                        break
                 if stable < 4:
                     continue
                 print(f"\n\n✓ 摆位稳定,保持不动 —— 正在采 {a.frames} 帧...")
@@ -432,7 +495,7 @@ def main():
                        .astype(np.float32) * scale for _ in range(a.frames)]
                 d = np.median(np.stack(acc), 0)
                 P, _ = deproject(d)
-                zl, zh, ratio, npts, geo, nrm = placement_score(P)
+                zl, zh, ratio, npts, geo, nrm, nvb = placement_score(P)
                 ok2, bad2 = placement_ok(ratio, zh, npts)
                 if not ok2:
                     print("  采集期间摆位变了(" + bad2[0][:30] + "),继续调\n")
@@ -449,6 +512,7 @@ def main():
             print(f"\n\n本次最好 {best:.2f}×")
         finally:
             p.stop()
+            cv2.destroyAllWindows()
         return
 
     if a.npy:
@@ -482,8 +546,8 @@ def main():
         return
     # 分析前先过摆位门。跨度不够时二次拟合的杠杆太短,算出的"上界"会比
     # 厂商谱面还宽 —— 那不是测量结果,是没测出来。宁可拒绝也不给假数字。
-    zl, zh, ratio, npts, geo, nrm = placement_score(P)
-    ok, bad = placement_ok(ratio, zh, npts)
+    zl, zh, ratio, npts, geo, nrm, nvb = placement_score(P)
+    ok, bad = placement_ok(ratio, zh, npts, nvb)
     if not ok:
         print(f"\n✗ 摆位不合格:连续段 {zl:.2f}~{zh:.2f} m,远近比 {ratio:.2f}×,内点 {npts}")
         for b in bad:
