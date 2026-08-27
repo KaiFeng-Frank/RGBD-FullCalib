@@ -190,19 +190,20 @@ def collect():
              '深度温漂 −372 ppm/°C 是铝合金线胀系数的 16 倍,主因不是机械膨胀。',
         checks=_VERDICTS.get('thermal', [])))
 
+    # 已销账(判决卡里可查):深度非线性(pixel-locking 归因+校正闭环)、
+    # 多径(墙脚 +25mm/22cm 已定量)。材质与时间同步各完成一半,如实标注。
     pending = [
-        dict(name='深度非线性', why='阶段 3 只测到 0.92 m,不知道 σ=k·d² 在 3~4 m 是否仍成立',
-             how='同一工具,把目标摆到 2/3/4 m 各测一次', cost='30 分钟'),
-        dict(name='多径干扰', why='墙角/凹槽的散斑多次反射产生虚深,是深度离群点的主要来源',
-             how='对着墙角采集,对照 IR 原图与深度残差', cost='30 分钟'),
-        dict(name='材质反射率', why='黑色吸光/镜面反光/半透明会让散斑失效,需要置信度加权的依据',
-             how='多种材质并排,看 IR 强度与深度有效率的关系', cost='30 分钟'),
+        dict(name='材质反射率(受控版)',
+             why='单场景初测被混杂主导(镜面地板+散斑饱和),工具已具备并会拒绝混杂场景',
+             how='同距离摆黑/白/镜面/半透明并排,tools/reflectivity_validity.py 重跑',
+             cost='30 分钟'),
+        dict(name='时间同步漂移 t_shift(T)',
+             why='跨会话差 0.46 ms 已进判决规则(warn);完整温度模型还没有',
+             how='在不同 ASIC 温度下各跑一次 cam-IMU 标定,拟合 t_shift(T)', cost='数小时'),
         dict(name='陀螺标度因子', why='加速度计已标,陀螺的 scale 需要已知角速度才能标',
              how='需要转台;或用视觉旋转当参考(精度较低)', cost='需要设备'),
         dict(name='卷帘快门 line delay', why='RGB 是卷帘快门,快速运动时逐行曝光会让特征位置偏移',
              how='需要转台或闪光灯;仅在用 RGB 做 VIO 时必要', cost='需要设备'),
-        dict(name='时间同步漂移', why='t_shift 随温度/负载变化,两次标定实测差 0.46 ms',
-             how='在不同 ASIC 温度下各跑一次 cam-IMU 标定,拟合 t_shift(T)', cost='数小时'),
     ]
     return dict(stages=st, pending=pending)
 

@@ -105,6 +105,28 @@
     "verdict": "校正闭环成立"
   },
   {
+    "id": "multipath_amp",
+    "stage": "depth",
+    "name": "凹角多径虚深(地面侧,<8cm)",
+    "unit": "mm",
+    "value": 25.2007835384535,
+    "reference": 5.0,
+    "ref_label": "显著阈值",
+    "status": "ok",
+    "verdict": "已定量 —— 结构化误差,融合平均不掉;建议交线 20cm 内深度按成员资格弃权"
+  },
+  {
+    "id": "reflect_gate",
+    "stage": "depth",
+    "name": "反射率单因子门限可用性",
+    "unit": "",
+    "value": 1.0,
+    "reference": 0.0,
+    "ref_label": "期望可用",
+    "status": "warn",
+    "verdict": "单场景混杂主导(镜面地板+饱和),门限被工具正确拒绝 —— 受控摆位后重跑"
+  },
+  {
     "id": "ts_two_cams",
     "stage": "camimu",
     "name": "两相机时间偏移之差",
@@ -185,7 +207,7 @@
   },
   {
     "id": "trio_chain_t",
-    "stage": "trio",
+    "stage": "rgbir",
     "name": "IR2→RGB 平移 vs 出厂链",
     "unit": "mm",
     "value": 64.94423126471001,

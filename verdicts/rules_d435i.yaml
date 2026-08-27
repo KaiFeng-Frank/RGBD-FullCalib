@@ -14,6 +14,8 @@ sources:
   imu_intr:     {file: results/imu_intrinsic.json,          format: json}
   thermal:      {file: results/thermal_model.json,          format: json}
   pixellock:    {file: results/pixellock_model.json,        format: json}
+  multipath:    {file: results/multipath_corner.json,       format: json}
+  reflect:      {file: results/reflectivity_validity.json,  format: json}
 
 checks:
   # ── RGB 内参 ──
@@ -101,6 +103,25 @@ checks:
     compare: le
     verdict_pass: 校正闭环成立
     verdict_fail: 校正无效 —— 查符号与 fold 相位
+
+  - id: multipath_amp
+    stage: depth
+    name: 凹角多径虚深(地面侧,<8cm)
+    value: {expr: "s['multipath']['summary']['plane2']['amp_mm']", unit: mm}
+    reference: {expr: "5", label: 显著阈值}
+    compare: ge
+    severity_fail: warn
+    verdict_pass: 已定量 —— 结构化误差,融合平均不掉;建议交线 20cm 内深度按成员资格弃权
+    verdict_fail: 本场景未检出(需含凹角的场景重测)
+  - id: reflect_gate
+    stage: depth
+    name: 反射率单因子门限可用性
+    value: {expr: "1 if s['reflect']['rejected'] else 0"}
+    reference: {expr: "0", label: 期望可用}
+    compare: le
+    severity_fail: warn
+    verdict_pass: 门限可用,已写入 reflectivity_validity.json
+    verdict_fail: 单场景混杂主导(镜面地板+饱和),门限被工具正确拒绝 —— 受控摆位后重跑
 
   # ── cam-IMU ──
   - id: ts_two_cams
