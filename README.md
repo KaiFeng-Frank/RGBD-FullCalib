@@ -149,6 +149,8 @@ are standard online states in VINS-class systems; intrinsics and the depth chain
 and *how hard does it hit SLAM?*, tiered with the measured propagation number behind
 each tier), and **pending experiments** (placeholders with why/how/cost). Thermal compensation can be applied to the live cloud with one checkbox.
 
+![Live D435i point cloud with calibration controls](results/d435i_live_pointcloud_fullscreen.gif)
+
 ```bash
 cd viewer
 python server.py --source d435i --alt-emitter     # live, with emitter alternation
