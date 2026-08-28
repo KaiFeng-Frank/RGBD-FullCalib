@@ -3,8 +3,9 @@
 **Building a one-stop, multi-sensor calibration workbench — where every parameter
 (camera, IMU, LiDAR, cross-sensor) comes back with a verdict: checked against
 references from *outside* the optimization, visualized, and flagged before a bad
-number ever reaches your SLAM stack. v0.1 ships the first full instance: one
-Intel RealSense D435i, end to end. The [roadmap](ROADMAP.md) goes much further.**
+number ever reaches your SLAM stack. v0.1 shipped the first full instance: one
+Intel RealSense D435i, end to end; v0.2.0 shipped its verdict layer as 24
+declarative rules. The [roadmap](ROADMAP.md) goes much further.**
 
 [中文版 README](README_zh.md) · field notes [CALIBRATION.md](CALIBRATION.md) (Chinese) ·
 error propagation [IMPACT_ANALYSIS.md](IMPACT_ANALYSIS.md) (Chinese) ·
@@ -44,27 +45,30 @@ plan: [ROADMAP.md](ROADMAP.md).
 
 **v0.1, shipped**: one camera end to end (RGB intrinsics → stereo IR → RGB↔IR
 extrinsics → depth noise model → camera-IMU → accelerometer intrinsics → thermal
-drift model), with the tools, the verdict layer, the GUI, and ~15 documented
-pitfalls that cost real hours.
+drift model), with the tools, hand-written verdict checks in prose/UI code, the
+GUI, and ~15 documented pitfalls that cost real hours.
 
-The seams for what's next are already in the code: about half the tools are
-device-agnostic (marked in the layout below), the viewer's source abstraction
+**v0.2.0, shipped**: those checks are now 24 declarative rules. One engine feeds
+the CLI, `REPORT.md`, and GUI cards, so a new device's verdicts mean new rules,
+not forked verdict code.
+
+The seams for v0.3 are already in the code: about half the tools are
+device-agnostic (marked in the layout below), and the viewer's source abstraction
 was built for a sensor that isn't a camera (a native point-stream channel is
-reserved for the Mid-360 on its way), and v0.2 turns the verdict checks into
-declarative rules so a new device means new rules, not forked code.
+reserved for the Mid-360 on its way).
 
 ### Bring your camera
 
 If you run any stage on a different RGB-D / visual-inertial rig and hit a wall,
 open an issue with the traceback — real breakpoints, not guesses, decide what
-v0.2+ abstracts first. There is a standing issue for exactly this.
+v0.3+ abstracts first. There is a standing issue for exactly this.
 
 ## Results at a glance
 
 | Stage | Key numbers | External check | Verdict |
 |---|---|---|---|
 | RGB intrinsics | fx/fy 884.8/883.9, reproj σ 0.56 px | principal point vs factory: 0.13 px | ✅ freeze |
-| Stereo IR + baseline | baseline 50.148 mm | vs factory 50.228 mm (0.16%); 5 independent captures within 0.14 mm | ✅ freeze |
+| Stereo IR + baseline | baseline 50.148 mm | vs factory 50.228 mm (0.16%); two independent calibrations from different bags differ by 0.005 mm | ✅ freeze |
 | RGB↔IR extrinsics | \|t\| diff vs factory 0.023 mm, rot 0.287° | factory calibration | ✅ freeze |
 | Depth noise model | σ² = (a·z²)² + flatness², σ = 4.1/16.3/65 mm @ 1/2/4 m | two rounds, target flatness cross-checked | ✅ use as weights |
 | Camera–IMU | timeshift 4.04 ms; rotation ~1° class | solved gravity 9.8070 vs local 9.80665; RGB/IR timeshift agree to 21 µs | ⚠️ freeze rotation + timeshift only |
@@ -118,7 +122,7 @@ code snippets and numbers read universally). Highlights:
 | 13 | Range-along-ray vs z-depth confusion | stored ray length as depth once — a flat wall renders as a sphere (101 mm residual, right angles read 81.8°) |
 | 14 | WebGL pages never finish "loading" | `requestAnimationFrame` keeps headless screenshots timing out — ship a `?static=1` mode; verify your GUI with your own eyes |
 
-## The verdict layer is now code (v0.2 core)
+## v0.2.0 shipped: the verdict layer is data
 
 ![Latest depth-model verdict with online-calibration and SLAM-impact badges](docs/img/verdict_depth_badges.png)
 
@@ -128,12 +132,12 @@ python -m verdicts --md REPORT.md       # markdown report (committed in repo)
 ```
 
 Every check that used to live as prose now lives in
-[`verdicts/rules_d435i.yaml`](verdicts/rules_d435i.yaml) — 22 rules, each one
+[`verdicts/rules_d435i.yaml`](verdicts/rules_d435i.yaml) — 24 rules, each one
 `{value expression, external reference, tolerance, action}` — executed by a
 ~200-line engine ([`verdicts/engine.py`](verdicts/engine.py)) that feeds the CLI
 report, [`REPORT.md`](REPORT.md), and the GUI cards from one source of truth.
 Missing files render as *pending*, so a half-calibrated repo still reports.
-Adding a device means writing rules, not forking code.
+Adding a device's verdict checks means writing rules, not forking verdict code.
 
 Machine-checking the prose paid off on day one: the old "five independent
 baseline measurements" claim turned out to be **fake independence** — Kalibr's
@@ -208,7 +212,7 @@ Your unit's numbers **will** differ — that's the point of calibrating.
 
 ## Roadmap at a glance
 
-**v0.2** verdict layer becomes declarative rules · **v0.3** Mid-360 + the full
+**v0.2.0 (shipped)** declarative verdict engine · **v0.3 (next)** Mid-360 + the full
 LiDAR-camera-IMU cross-sensor chain · **v0.4** more RGB-D families, rig as a
 description file · **v0.5** the impact analyzer becomes a tool (input your motion
 profile, get *your* first-order error terms) · **v1.0** guided capture,

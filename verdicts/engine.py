@@ -73,7 +73,8 @@ def load_sources(spec, base):
         if not os.path.exists(path):
             missing[name] = cfg['file']
             continue
-        raw = open(path, encoding='utf-8').read()
+        with open(path, encoding='utf-8') as f:
+            raw = f.read()
         fmt = cfg.get('format', 'yaml')
         if fmt == 'yaml':
             out[name] = yaml.safe_load(raw)
@@ -137,7 +138,8 @@ def run_check(ck, sources, missing):
 
 def evaluate(rules_path):
     base = os.path.dirname(os.path.dirname(os.path.abspath(rules_path)))
-    rules = yaml.safe_load(open(rules_path, encoding='utf-8'))
+    with open(rules_path, encoding='utf-8') as f:
+        rules = yaml.safe_load(f)
     sources, missing = load_sources(rules.get('sources', {}), base)
     return [run_check(c, sources, missing) for c in rules.get('checks', [])]
 

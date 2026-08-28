@@ -14,8 +14,10 @@ a = ap.parse_args()
 res = evaluate(a.rules)
 print(render_text(res))
 if a.md:
-    open(a.md, 'w').write(render_md(res))
+    with open(a.md, 'w', encoding='utf-8') as f:
+        f.write(render_md(res))
     print(f'\n已写 {a.md}')
 if a.json_out:
-    json.dump(res, open(a.json_out, 'w'), ensure_ascii=False, indent=2)
+    with open(a.json_out, 'w', encoding='utf-8') as f:
+        json.dump(res, f, ensure_ascii=False, indent=2)
     print(f'已写 {a.json_out}')

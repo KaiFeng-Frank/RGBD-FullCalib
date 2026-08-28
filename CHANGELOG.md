@@ -2,20 +2,25 @@
 
 ## [Unreleased]
 
-- **v0.2 core landed: the verdict layer is data.** 22 checks moved from prose
-  into `verdicts/rules_d435i.yaml`; a small engine feeds CLI / REPORT.md / GUI
+## [0.2.0] — 2026-08-28
+
+- **The verdict layer is data.** 24 checks moved from prose into
+  `verdicts/rules_d435i.yaml`; one engine feeds CLI / REPORT.md / GUI
   from one source. Factory reference params dumped to machine-readable JSON.
   First catch: the "five independent baseline measurements" claim was fake
   independence (Kalibr inherits the camera chain) — now honestly "two".
-- Depth nonlinearity fully closed: pixel-locking sawtooth attributed to the
-  device (cross-capture r=0.97), correction model shipped and validated
+- Depth nonlinearity closed: the repeatable pixel-locking sawtooth was
+  attributed to the device (cross-capture r=0.97), bounded below the vendor
+  specification, and shipped with a validated correction model
+- Corner multipath quantified at 25.2 mm on the floor side; the result is now a
+  verdict rule that recommends rejecting depth near concave intersections
+- Added a hardware-free integration test that keeps the 24-rule schema, CLI
+  JSON, committed `REPORT.md`, and GUI projection in lockstep
 - Renamed `d435i-calibration-field-guide` → `RGBD-FullCalib`
-- Depth nonlinearity: three independent methods attempted, verdict is
-  rig-limited (see CALIBRATION.md) — published as a negative result
 - Rig photos added
 
-See [ROADMAP.md](ROADMAP.md) — next up: declarative verdict schema (v0.2),
-Mid-360 + LiDAR-camera extrinsics (v0.3, hardware ordered).
+See [ROADMAP.md](ROADMAP.md) — next up: Mid-360 + LiDAR-camera extrinsics
+(v0.3, hardware ordered).
 
 ## [0.1.0] — 2026-08-28
 

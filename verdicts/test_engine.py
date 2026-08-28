@@ -9,9 +9,12 @@ from verdicts.engine import evaluate
 
 d = tempfile.mkdtemp()
 os.makedirs(f'{d}/data'); os.makedirs(f'{d}/rules')
-open(f'{d}/data/a.yaml', 'w').write("cam1:\n  T: [[1,0,0,0.0501],[0,1,0,0],[0,0,1,0]]\n")
-json.dump(dict(base=50.0, vals=[1.0, 1.2, 0.9]), open(f'{d}/data/b.json', 'w'))
-open(f'{d}/data/c.txt', 'w').write("mean 4.087, median 1.9\nmean 6.416, median 2.6\n")
+with open(f'{d}/data/a.yaml', 'w') as f:
+    f.write("cam1:\n  T: [[1,0,0,0.0501],[0,1,0,0],[0,0,1,0]]\n")
+with open(f'{d}/data/b.json', 'w') as f:
+    json.dump(dict(base=50.0, vals=[1.0, 1.2, 0.9]), f)
+with open(f'{d}/data/c.txt', 'w') as f:
+    f.write("mean 4.087, median 1.9\nmean 6.416, median 2.6\n")
 rules = """
 sources:
   a: {file: data/a.yaml, format: yaml}
@@ -39,7 +42,8 @@ checks:
   - {id: t7, stage: s3, name: bad-key,
      value: {expr: "s['b']['no_such']"}, reference: {expr: "1"}, compare: within, tol: {abs: 1}}
 """
-open(f'{d}/rules/r.yaml', 'w').write(rules)
+with open(f'{d}/rules/r.yaml', 'w') as f:
+    f.write(rules)
 res = {r['id']: r for r in evaluate(f'{d}/rules/r.yaml')}
 assert res['t1']['status'] == 'ok' and res['t1']['verdict'] == 'FREEZE', res['t1']
 assert abs(res['t1']['value'] - 50.1) < 1e-6

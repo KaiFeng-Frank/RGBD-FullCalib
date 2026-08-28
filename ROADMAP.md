@@ -26,27 +26,34 @@ one honest version at a time.
 The D435i as proof of method: seven calibration stages, each with an external
 check and a trust decision. Negative results published. GUI. 15+ pitfalls.
 
-### v0.2 — the verdict layer becomes data
+### v0.2 — the verdict layer becomes data (shipped)
 
-Checks turn into declarative yaml rules — `{parameter, source, external
-reference, tolerance, verdict}` — and the renderer just executes them. Adding a
-device becomes writing rules, not forking code. The generic/device split already
-marked in the README becomes a real package boundary (`pip install` the generic
-half without pyrealsense2).
+Twenty-four checks now live as declarative yaml rules — `{parameter, source,
+external reference, tolerance, verdict}` — with one engine feeding the CLI,
+`REPORT.md`, and the GUI. Factory references are machine-readable, and the
+CLI, report, and GUI verdict rows no longer carry separate copies of the
+decisions; GUI stage metadata remains device-specific. v0.2 deliberately stops
+at this shared verdict engine; device plug-ins and dependency boundaries need a
+real second device to expose the right seams.
 
 ### v0.3 — LiDAR enters, cross-sensor begins
 
 Livox Mid-360 (hardware ordered): LiDAR-IMU rotation, LiDAR-camera extrinsics
 and time sync — the full "camera-and-LiDAR-on-one-rig" chain under the same
 verdict discipline. The viewer already reserves the native point-stream channel
-(`T_POINTS`) and the source abstraction was designed for this split.
+(`T_POINTS`) and the source abstraction was designed for this split. This is
+also the first real test of the generic/device package boundary: the Mid-360's
+actual integration breakpoints, rather than a speculative abstraction, decide
+what moves into the generic package and where `pyrealsense2` becomes optional.
+If one second device is not enough evidence, that split completes in v0.4.
 
 ### v0.4 — more devices, rig as a description file
 
 Second and third RGB-D families (D455 / OAK / Orbbec class), ported from real
 user breakpoints (there's a standing issue collecting them). A `rig.yaml`
 describes sensors and links; the workbench derives the capture plan and the
-calibration graph from it.
+calibration graph from it. Complete the generic/device package boundary here if
+the Mid-360 integration did not establish it cleanly in v0.3.
 
 ### v0.5 — the impact analyzer becomes a tool
 
@@ -63,6 +70,10 @@ full-stack RGB-D calibration, one command, every number with a verdict.
 
 ## Standing experiment queue (ranked by measured impact)
 
-Depth nonlinearity beyond 0.92 m (the one unbounded row in the error budget) →
-multipath at corners → per-material validity. ~30 min each with existing tools;
-placeholder cards already in the GUI.
+Completed in v0.2: depth nonlinearity was bounded and its repeatable
+pixel-locking component gained a validated correction; corner multipath was
+quantified and recorded as a verdict action recommending a 20 cm
+depth-membership exclusion.
+
+Remaining, in order: controlled reflectivity/per-material validity → time-offset
+thermal drift → rolling-shutter characterization → gyro scale factor.
