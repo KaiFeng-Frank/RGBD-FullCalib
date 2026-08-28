@@ -388,6 +388,14 @@ function renderCalib(c){
     <div class="card">
       <h3>${esc(t.name)}<span class="st pending">待做</span>
         <span style="color:var(--dim);font-size:11px;font-weight:400">${esc(t.cost)}</span></h3>
+      ${t.slam?`<div class="slam">
+        <span class="pill on-${t.slam.online}">${
+          {online:'可在线标定',partial:'部分可在线',offline:'仅离线标定'}[t.slam.online]}</span>
+        <span class="pill im-${t.slam.impact}">SLAM 影响:${
+          {high:'高',mid:'中',low:'低',split:'分层'}[t.slam.impact]}</span>
+        <div class="sn">${esc(t.slam.online_note)}</div>
+        <div class="sn">${esc(t.slam.impact_note)}</div>
+      </div>`:''}
       <table>
         <tr><td>为什么要做</td><td>${esc(t.why)}</td></tr>
         <tr><td>怎么做</td><td>${esc(t.how)}</td></tr>

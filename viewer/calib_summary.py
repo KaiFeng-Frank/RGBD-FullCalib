@@ -239,14 +239,34 @@ def collect():
         dict(name='材质反射率(受控版)',
              why='单场景初测被混杂主导(镜面地板+散斑饱和),工具已具备并会拒绝混杂场景',
              how='同距离摆黑/白/镜面/半透明并排,tools/reflectivity_validity.py 重跑',
-             cost='30 分钟'),
+             cost='30 分钟',
+             slam=dict(online='offline',
+                 online_note='仅离线 — 门限属于传感器特性;运行时按 IR 亮度做 0/1 门控是应用不是标定',
+                 impact='mid',
+                 impact_note='失效本身可门控(无效像素易剔除,实测镜面区近半失效);'
+                             '真正风险是镜面虚像给出假几何 —— 未定量,正是受控实验要回答的')),
         dict(name='时间同步漂移 t_shift(T)',
              why='跨会话差 0.46 ms 已进判决规则(warn);完整温度模型还没有',
-             how='在不同 ASIC 温度下各跑一次 cam-IMU 标定,拟合 t_shift(T)', cost='数小时'),
+             how='在不同 ASIC 温度下各跑一次 cam-IMU 标定,拟合 t_shift(T)', cost='数小时',
+             slam=dict(online='online',
+                 online_note='可在线(公认)— td 在线估计是 VINS 类标配,直接覆盖温漂;'
+                             '离线温度模型只在冻结部署(无 td 状态)时才需要',
+                 impact='low',
+                 impact_note='0.46 ms 在 ω=2 rad/s 下 ≈ 0.8 px,地面机器人工况 ≈ 0.2 px(噪底下)')),
         dict(name='陀螺标度因子', why='加速度计已标,陀螺的 scale 需要已知角速度才能标',
-             how='需要转台;或用视觉旋转当参考(精度较低)', cost='需要设备'),
+             how='需要转台;或用视觉旋转当参考(精度较低)', cost='需要设备',
+             slam=dict(online='offline',
+                 online_note='不可在线 — 与旋转本身强耦合,常规运动下不可观,需转台级已知激励',
+                 impact='low',
+                 impact_note='scale 偏 0.5% → 90° 旋转积分偏 0.45°,VIO 中被视觉持续矫正;'
+                             '只在长时间纯积分(视觉失效窗)才升为一阶')),
         dict(name='卷帘快门 line delay', why='RGB 是卷帘快门,快速运动时逐行曝光会让特征位置偏移',
-             how='需要转台或闪光灯;仅在用 RGB 做 VIO 时必要', cost='需要设备'),
+             how='需要转台或闪光灯;仅在用 RGB 做 VIO 时必要', cost='需要设备',
+             slam=dict(online='offline',
+                 online_note='仅离线(RS-aware VIO 有在线估计研究,非标配)',
+                 impact='low',
+                 impact_note='本 rig 追踪走 IR(全局快门)→ 只伤 RGB 色彩对齐;'
+                             '若改用 RGB 追踪则升为一阶:激进运动 ~26 px 剪切(按 15 ms 读出估)')),
     ]
     for stage in st:
         if stage['id'] in SLAM_NOTES:
