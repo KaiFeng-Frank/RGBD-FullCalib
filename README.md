@@ -143,8 +143,11 @@ yaml carries the comment explaining why.
 
 A WebGL2 point-cloud viewer with three tabs: **live cloud** (16-bit depth over WebSocket,
 in-shader deprojection), **calibration results** (the verdict cards above, generated
-from the actual yaml/json outputs), and **pending experiments** (placeholders with
-why/how/cost). Thermal compensation can be applied to the live cloud with one checkbox.
+from the actual yaml/json outputs — each card also carries two SLAM badges:
+*can this quantity be calibrated online?* (extrinsic rotation / time offset / IMU bias
+are standard online states in VINS-class systems; intrinsics and the depth chain are not)
+and *how hard does it hit SLAM?*, tiered with the measured propagation number behind
+each tier), and **pending experiments** (placeholders with why/how/cost). Thermal compensation can be applied to the live cloud with one checkbox.
 
 ```bash
 cd viewer

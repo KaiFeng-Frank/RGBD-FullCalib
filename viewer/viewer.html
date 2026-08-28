@@ -34,6 +34,17 @@ html,body{height:100%;background:var(--bg);color:var(--fg);
 .card td{padding:3px 0;vertical-align:top}
 .card td:first-child{color:var(--dim);width:38%;padding-right:12px}
 .card td:last-child{font-variant-numeric:tabular-nums}
+.slam{margin:2px 0 10px;font-size:11px}
+.slam .pill{display:inline-block;padding:1px 8px;border-radius:10px;
+  font-size:10.5px;font-weight:500;margin-right:6px}
+.pill.on-online{background:rgba(63,185,80,.16);color:var(--ok)}
+.pill.on-partial{background:rgba(88,166,255,.16);color:var(--accent)}
+.pill.on-offline{background:rgba(139,148,158,.18);color:var(--dim)}
+.pill.im-high{background:rgba(248,81,73,.16);color:var(--err)}
+.pill.im-mid{background:rgba(210,153,34,.16);color:var(--warn)}
+.pill.im-low{background:rgba(63,185,80,.16);color:var(--ok)}
+.pill.im-split{background:rgba(163,113,247,.16);color:#a371f7}
+.slam .sn{color:var(--dim);line-height:1.6;margin-top:3px}
 .note{font-size:11.5px;color:var(--dim);line-height:1.65;
   border-left:2px solid var(--line);padding-left:10px;margin-top:4px}
 .chk{display:flex;gap:7px;align-items:flex-start;font-size:11.5px;margin:4px 0}
@@ -359,6 +370,14 @@ function renderCalib(c){
         <span class="st ${s.status}">${s.status==='done'?'已完成':'待做'}</span>
         <span style="color:var(--dim);font-size:11px;font-weight:400">${esc(s.stage)}</span></h3>
       <div class="src">${esc(s.source)}</div>
+      ${s.slam?`<div class="slam">
+        <span class="pill on-${s.slam.online}">${
+          {online:'可在线标定',partial:'部分可在线',offline:'仅离线标定'}[s.slam.online]}</span>
+        <span class="pill im-${s.slam.impact}">SLAM 影响:${
+          {high:'高',mid:'中',low:'低',split:'分层'}[s.slam.impact]}</span>
+        <div class="sn">${esc(s.slam.online_note)}</div>
+        <div class="sn">${esc(s.slam.impact_note)}</div>
+      </div>`:''}
       ${s.rows.length?`<table>${s.rows.map(r=>
         `<tr><td>${esc(r[0])}</td><td>${esc(r[1])}</td></tr>`).join('')}</table>`:''}
       ${s.checks.map(k=>`<div class="chk ${k[2]}"><i>${

@@ -54,6 +54,49 @@ def _T(block):
     return [[float(x) for x in r.split(',')] for r in rows] if len(rows) == 4 else None
 
 
+# 每个标定量族的 SLAM 视角:能否在线标定 + 对 SLAM 的影响定级。
+# 定量依据 = IMPACT_ANALYSIS.md 的实测传播 + 本机对照实验;
+# "公认"限于主流 VIO/SLAM 的标准实践(VINS-Mono/ORB-SLAM3 类:
+# 外参旋转/时移/IMU 零偏在线估计是标配,内参与深度链离线)。
+SLAM_NOTES = {
+    'rgb': dict(
+        online='offline', online_note='仅离线 — 主流 VIO 假设内参固定;在线自标定属研究方向,非公认实践',
+        impact='high',
+        impact_note='所有视觉约束的底座:焦距误差 1% ≈ 三角化深度误差 1%;'
+                    '本机出厂零畸变模型在视野边缘造成 10 px 量级位移(实测)'),
+    'ir': dict(
+        online='offline', online_note='仅离线 — 深度由 ASIC 用烧录参数计算,运行时不可改',
+        impact='high',
+        impact_note='深度尺度之源:δz/z = δb/b;基线偏 0.16% = 4 m 处 6.4 mm,直接进建图全局尺度'),
+    'depth': dict(
+        online='partial', online_note='部分 — 噪声权重可在线自适应;pixel-locking 校正表与多径门控只能离线定',
+        impact='split',
+        impact_note='随机噪声:中(权重错只降精度,σ 4.1 mm@1m vs 65 mm@4m,不加权则远点主导)· '
+                    '多径:高(建图,+25 mm/22 cm 结构化,融合平均不掉)· '
+                    'pixel-locking:低-中(0.23%@1m→0.93%@4m,确定性可查表校正)'),
+    'camimu': dict(
+        online='online', online_note='可在线(公认)— 旋转与时移是 VINS-Mono/ORB-SLAM3 的标准在线状态;'
+                    '本机判决:旋转/时移可冻结,平移必须在线(杠杆臂 2~3 cm 不可观,三解散布 26%)',
+        impact='high',
+        impact_note='旋转偏 1° → 重力泄漏 0.17 m/s² 进加速度计;时移跨会话 0.46 ms 在 ω=2 rad/s 下 ≈ 0.8 px'),
+    'rgbir': dict(
+        online='offline', online_note='仅离线(光度一致性精修属研究级,非标配)',
+        impact='mid',
+        impact_note='只影响跨模态对齐(上色/语义投影),px 级,不进位姿链;本机与出厂差 0.023 mm,非问题'),
+    'imuintr': dict(
+        online='partial', online_note='零偏在线是所有 VIO 标配;标度/非正交不在线(可观测性差,需专门激励)',
+        impact='low',
+        impact_note='对照实验实测:校正后 cam-IMU 残差几乎不动(动态下被在线零偏状态吸收);'
+                    '收益在静置初始化:重力方向偏差 0.5°'),
+    'thermal': dict(
+        online='partial', online_note='分通道 — IMU 零偏温漂被 VIO 在线零偏估计天然吸收(公认);'
+                    '深度尺度温漂无对应在线状态,只能离线建模挂 ASIC 温度',
+        impact='split',
+        impact_note='深度尺度:高(冷热 −0.48% = 4 m 处 19 mm,单次建图即双层墙;图内定位无状态可吸收)· '
+                    'IMU 零偏:低(在线吸收)· 焦距:低(视野边缘 1.6 px)'),
+}
+
+
 def collect():
     st = []
 
@@ -205,6 +248,9 @@ def collect():
         dict(name='卷帘快门 line delay', why='RGB 是卷帘快门,快速运动时逐行曝光会让特征位置偏移',
              how='需要转台或闪光灯;仅在用 RGB 做 VIO 时必要', cost='需要设备'),
     ]
+    for stage in st:
+        if stage['id'] in SLAM_NOTES:
+            stage['slam'] = SLAM_NOTES[stage['id']]
     return dict(stages=st, pending=pending)
 
 
