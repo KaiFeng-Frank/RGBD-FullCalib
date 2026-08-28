@@ -11,18 +11,22 @@ v0.1 交付第一个完整实例:一台 D435i 从头标到尾。[路线图](ROAD
 
 ![D435i 实时点云与标定控制界面](results/d435i_live_pointcloud_fullscreen.gif)
 
+标定这行最怕的不是误差大,是**看起来漂亮但错得一致**。重投影误差只说明模型拟合了
+喂给它的数据,仅此而已。所以这里每个结果都对照一个**优化之外**的参照:出厂参数、
+当地重力、多次独立采集、一把尺子。参数过不了核查,工具就直说,不让一个看起来漂亮的
+坏数字混进 SLAM 栈。
+
+## 这套 rig
+
 <p align="center">
   <img src="docs/img/rig_d435i.jpg" alt="D435i 标定设备" width="61%">
   <img src="docs/img/target_aprilgrid.jpg" alt="AprilGrid 刚性标定板" width="34%">
 </p>
 <p align="center"><sub>Intel RealSense D435i（fw 5.12.7.100，USB 3.2）· DFOPTIX <code>Tag6-320-35.2mm</code> 刚性 AprilGrid</sub></p>
 
-![判决卡片](docs/img/verdict_card.png)
-
-标定这行最怕的不是误差大,是**看起来漂亮但错得一致**。重投影误差只说明模型拟合了
-喂给它的数据,仅此而已。所以这里每个结果都对照一个**优化之外**的参照:出厂参数、
-当地重力、多次独立采集、一把尺子。参数过不了核查,工具就直说 —— 上图那行红的就是
-本机的 cam-IMU 平移,判决是"**不要冻结这个数,交给 VIO 在线估计**"。
+靶标是成品板不是自己打印的 —— 这点很重要:排除了打印缩放这个误差源,
+残差就能归到检测和相机身上,而不是尺子身上。`tagSpacing = 0.3` 经四方确认
+(尺子实测白缝 10.6 mm、型号名反推、Kalibr 默认、重投影误差扫描在 0.30 处有明确极小)。
 
 ## 这要去哪
 
@@ -49,12 +53,6 @@ v0.2+ 先抽象什么,由真实断点决定,不靠猜。有一个常驻 issue �
 的速览表或 [CALIBRATION.md](CALIBRATION.md) 全文。机器可读结果在
 [`data/*.yaml`](data) 与 [`results/*.json`](results)。
 
-## 这套 rig
-
-靶标是成品板不是自己打印的 —— 这点很重要:排除了打印缩放这个误差源,
-残差就能归到检测和相机身上,而不是尺子身上。`tagSpacing = 0.3` 经四方确认
-(尺子实测白缝 10.6 mm、型号名反推、Kalibr 默认、重投影误差扫描在 0.30 处有明确极小)。
-
 ## 特意发表的负结果
 
 - **本机 cam-IMU 平移标不出来**:三次独立解散布 24.6~31.7 mm,量本身才 ~26 mm。
@@ -73,6 +71,8 @@ v0.2+ 先抽象什么,由真实断点决定,不靠猜。有一个常驻 issue �
 一行版摘要见 [English README](README.md#pitfalls-that-cost-real-hours)。
 
 ## 判决层已经是代码了(v0.2 核心)
+
+![带在线标定与 SLAM 影响徽章的最新深度模型判决卡片](docs/img/verdict_depth_badges.png)
 
 ```bash
 python -m verdicts                      # 终端判决

@@ -12,21 +12,26 @@ error propagation [IMPACT_ANALYSIS.md](IMPACT_ANALYSIS.md) (Chinese) ·
 
 ![Live D435i point cloud with calibration controls](results/d435i_live_pointcloud_fullscreen.gif)
 
+Calibration's worst failure mode is **looking beautiful while being consistently wrong**.
+Reprojection error tells you the model fits the data it was fitted to — nothing more.
+So every result here is checked against something *outside* the optimization:
+factory parameters, local gravity, repeated independent captures, a ruler.
+And when a parameter fails its check, the tool says so instead of letting a
+reassuring-looking bad number slip into the stack.
+
+## The rig
+
 <p align="center">
   <img src="docs/img/rig_d435i.jpg" alt="D435i calibration rig" width="61%">
   <img src="docs/img/target_aprilgrid.jpg" alt="Rigid AprilGrid calibration target" width="34%">
 </p>
 <p align="center"><sub>Intel RealSense D435i (fw 5.12.7.100, USB 3.2) · DFOPTIX <code>Tag6-320-35.2mm</code> rigid AprilGrid</sub></p>
 
-![verdict card](docs/img/verdict_card.png)
-
-Calibration's worst failure mode is **looking beautiful while being consistently wrong**.
-Reprojection error tells you the model fits the data it was fitted to — nothing more.
-So every result here is checked against something *outside* the optimization:
-factory parameters, local gravity, repeated independent captures, a ruler.
-And when a parameter fails its check, the tool says so — the red row above is this rig's
-camera–IMU translation, shipped with the verdict *"do not freeze this number,
-let your VIO estimate it online."*
+The target is a manufactured board, not a home print — which matters: it rules out
+print-scaling as an error source, so residuals trace to detection and to the camera,
+not to the ruler. `tagSpacing = 0.3` was confirmed four independent ways
+(ruler-measured 10.6 mm gap, the part number, the Kalibr default, and a
+reprojection-error sweep with a clear minimum at 0.30).
 
 ## Where this is going
 
@@ -53,14 +58,6 @@ declarative rules so a new device means new rules, not forked code.
 If you run any stage on a different RGB-D / visual-inertial rig and hit a wall,
 open an issue with the traceback — real breakpoints, not guesses, decide what
 v0.2+ abstracts first. There is a standing issue for exactly this.
-
-## The rig
-
-The target is a manufactured board, not a home print — which matters: it rules out
-print-scaling as an error source, so residuals trace to detection and to the camera,
-not to the ruler. `tagSpacing = 0.3` was confirmed four independent ways
-(ruler-measured 10.6 mm gap, the part number, the Kalibr default, and a
-reprojection-error sweep with a clear minimum at 0.30).
 
 ## Results at a glance
 
@@ -122,6 +119,8 @@ code snippets and numbers read universally). Highlights:
 | 14 | WebGL pages never finish "loading" | `requestAnimationFrame` keeps headless screenshots timing out — ship a `?static=1` mode; verify your GUI with your own eyes |
 
 ## The verdict layer is now code (v0.2 core)
+
+![Latest depth-model verdict with online-calibration and SLAM-impact badges](docs/img/verdict_depth_badges.png)
 
 ```bash
 python -m verdicts                      # terminal verdicts
