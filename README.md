@@ -10,6 +10,14 @@ Intel RealSense D435i, end to end. The [roadmap](ROADMAP.md) goes much further.*
 error propagation [IMPACT_ANALYSIS.md](IMPACT_ANALYSIS.md) (Chinese) ·
 [ROADMAP](ROADMAP.md) · [CHANGELOG](CHANGELOG.md)
 
+![Live D435i point cloud with calibration controls](results/d435i_live_pointcloud_fullscreen.gif)
+
+<p align="center">
+  <img src="docs/img/rig_d435i.jpg" alt="D435i calibration rig" width="61%">
+  <img src="docs/img/target_aprilgrid.jpg" alt="Rigid AprilGrid calibration target" width="34%">
+</p>
+<p align="center"><sub>Intel RealSense D435i (fw 5.12.7.100, USB 3.2) · DFOPTIX <code>Tag6-320-35.2mm</code> rigid AprilGrid</sub></p>
+
 ![verdict card](docs/img/verdict_card.png)
 
 Calibration's worst failure mode is **looking beautiful while being consistently wrong**.
@@ -47,11 +55,6 @@ open an issue with the traceback — real breakpoints, not guesses, decide what
 v0.2+ abstracts first. There is a standing issue for exactly this.
 
 ## The rig
-
-| | |
-|---|---|
-| ![D435i on tripod](docs/img/rig_d435i.jpg) | ![AprilGrid target](docs/img/target_aprilgrid.jpg) |
-| Intel RealSense D435i, fw 5.12.7.100, USB 3.2 | DFOPTIX `Tag6-320-35.2mm` AprilGrid on a rigid board |
 
 The target is a manufactured board, not a home print — which matters: it rules out
 print-scaling as an error source, so residuals trace to detection and to the camera,
@@ -149,7 +152,7 @@ are standard online states in VINS-class systems; intrinsics and the depth chain
 and *how hard does it hit SLAM?*, tiered with the measured propagation number behind
 each tier), and **pending experiments** (placeholders with why/how/cost). Thermal compensation can be applied to the live cloud with one checkbox.
 
-![Live D435i point cloud with calibration controls](results/d435i_live_pointcloud_fullscreen.gif)
+![Latest calibration results with online-calibration and SLAM-impact badges](results/gui_slam_badges.png)
 
 ```bash
 cd viewer
@@ -157,8 +160,6 @@ python server.py --source d435i --alt-emitter     # live, with emitter alternati
 python server.py --source synthetic               # no camera needed
 # open http://localhost:8080         (add ?static=1 for a screenshot-friendly page)
 ```
-
-![calibration page](docs/img/calib_page.png)
 
 ## Repository layout
 

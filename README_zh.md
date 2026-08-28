@@ -9,6 +9,14 @@ v0.1 交付第一个完整实例:一台 D435i 从头标到尾。[路线图](ROAD
 误差影响分析 [IMPACT_ANALYSIS.md](IMPACT_ANALYSIS.md) ·
 [ROADMAP](ROADMAP.md) · [CHANGELOG](CHANGELOG.md)
 
+![D435i 实时点云与标定控制界面](results/d435i_live_pointcloud_fullscreen.gif)
+
+<p align="center">
+  <img src="docs/img/rig_d435i.jpg" alt="D435i 标定设备" width="61%">
+  <img src="docs/img/target_aprilgrid.jpg" alt="AprilGrid 刚性标定板" width="34%">
+</p>
+<p align="center"><sub>Intel RealSense D435i（fw 5.12.7.100，USB 3.2）· DFOPTIX <code>Tag6-320-35.2mm</code> 刚性 AprilGrid</sub></p>
+
 ![判决卡片](docs/img/verdict_card.png)
 
 标定这行最怕的不是误差大,是**看起来漂亮但错得一致**。重投影误差只说明模型拟合了
@@ -42,11 +50,6 @@ v0.2+ 先抽象什么,由真实断点决定,不靠猜。有一个常驻 issue �
 [`data/*.yaml`](data) 与 [`results/*.json`](results)。
 
 ## 这套 rig
-
-| | |
-|---|---|
-| ![D435i](docs/img/rig_d435i.jpg) | ![AprilGrid](docs/img/target_aprilgrid.jpg) |
-| Intel RealSense D435i,fw 5.12.7.100,USB 3.2 | DFOPTIX `Tag6-320-35.2mm` 硬质板 AprilGrid |
 
 靶标是成品板不是自己打印的 —— 这点很重要:排除了打印缩放这个误差源,
 残差就能归到检测和相机身上,而不是尺子身上。`tagSpacing = 0.3` 经四方确认
@@ -94,14 +97,14 @@ WebGL2 点云查看器,三页签:实时点云(16-bit 深度 WebSocket 流、shad
 **对 SLAM 影响定级**,每一级背后是实测传播数字)、待办占位。温漂补偿一个勾选框
 直接作用到实时点云。
 
+![最新标定结果与在线标定、SLAM 影响徽章](results/gui_slam_badges.png)
+
 ```bash
 cd viewer
 python server.py --source d435i --alt-emitter   # 实机 + 发射器交替帧
 python server.py --source synthetic             # 无相机也能跑
 # 浏览器打开 http://localhost:8080    (?static=1 是可截图的静态模式)
 ```
-
-![标定页](docs/img/calib_page.png)
 
 ## 在你自己的 D435i 上复现
 
