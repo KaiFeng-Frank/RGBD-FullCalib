@@ -1,0 +1,445 @@
+{
+  "schema_version": 1,
+  "artifact_type": "stereo_rectification_validation",
+  "role": "validation_only",
+  "is_calibration_parameter": false,
+  "slam_blocking": false,
+  "claim_scope": "D435i IR1/IR2 frames delivered by firmware/SDK and saved without remap",
+  "protocol": {
+    "id": "d435i-delivered-ir-epipolar-v1",
+    "document": "docs/STEREO_RECTIFICATION_ACCEPTANCE.md",
+    "document_sha256": "6b8e9873e8a63d6198ff932a48e094644ed1f4923c9f1886b0a519206c035145",
+    "frozen_date": "2026-08-31",
+    "support_limits": {
+      "minimum_pairs_with_common_tags": 12,
+      "minimum_matched_corners": 600,
+      "minimum_grid_cells": 6,
+      "minimum_grid_rows": 2,
+      "minimum_grid_columns": 2
+    },
+    "pass_limits": {
+      "median_abs_vertical_px": 1.0,
+      "p95_abs_vertical_px": 1.5,
+      "p99_abs_vertical_px": 2.0,
+      "fraction_abs_vertical_gt_2px": 0.01
+    },
+    "percentile_method": "numpy linear interpolation"
+  },
+  "device": {
+    "model": "RealSense D435I",
+    "serial": "947122070908",
+    "firmware": "5.12.7.100"
+  },
+  "inputs": {
+    "evaluation_set": {
+      "path": "data/cam_trio_frames",
+      "role": "independent_holdout",
+      "pair_stems": [
+        "0000",
+        "0001",
+        "0002",
+        "0003",
+        "0004",
+        "0005",
+        "0006",
+        "0007",
+        "0008",
+        "0009",
+        "0010",
+        "0011",
+        "0012",
+        "0013",
+        "0014",
+        "0015"
+      ],
+      "image_set_sha256": "45fe85c750b4ce6836bb0f560d0aab234f54f7cb0ad6aa66233a8ba2b57041d1",
+      "times_sha256": "db1826e28cfae10f882d8f0a1ad583938f029edfbc8a37e4b11122cf6714b05f",
+      "bag_path": "data/cam_trio.bag",
+      "bag_sha256": "28a987deec24785f64694a81b98bdba2b7690d261c4d6797ffcbe0b3e45face6"
+    },
+    "calibration_set": {
+      "path": "data/cam_ir_frames",
+      "role": "calibration_input_used_only_to_prove_holdout_independence",
+      "image_set_sha256": "2f4a97b628349a6b777edbee00a8e1ee97dc84e88b6b9ec0ab3f3b3d59de35bc",
+      "times_sha256": "9bf55916fcec860efe72e1c59228cd023a63f32422b58f97fb7c6476b04a0288",
+      "camchain_path": "data/cam_ir-camchain.yaml",
+      "camchain_sha256": "b9376bee33fbdc11ae9f2a01015a7bf77e4f9d96a22571d6a10b6cc0c6675b6e",
+      "camchain_role": "provenance_not_used_for_metric"
+    },
+    "factory_params": {
+      "path": "results/factory_params.json",
+      "sha256": "c4f2abc759a3d0e7233f3336825f2b9e66aa236ca3144a712fef8dcc678cf249",
+      "role": "device_identity_only"
+    }
+  },
+  "profile": {
+    "width": 1280,
+    "height": 720,
+    "format": "Y8"
+  },
+  "method": {
+    "detector": "OpenCV DICT_APRILTAG_36h11",
+    "accepted_tag_ids": {
+      "minimum": 0,
+      "maximum": 35
+    },
+    "adaptive_threshold_windows": {
+      "min": 3,
+      "max": 15,
+      "step": 2
+    },
+    "corner_refinement": "CORNER_REFINE_SUBPIX",
+    "corner_refinement_window": 5,
+    "correspondence": "tag_id + canonical_corner_index",
+    "signed_error": "y_IR1 - y_IR2",
+    "remap_applied": false,
+    "undistort_applied": false,
+    "fitted_parameters": false,
+    "cam_trio_camchain_used": false,
+    "manual_frame_or_corner_rejection": false
+  },
+  "support": {
+    "pairs_total": 16,
+    "pairs_processed": 16,
+    "pairs_with_common_tags": 14,
+    "matched_tags": 45,
+    "matched_corners": 180,
+    "coverage": {
+      "grid": "3x3",
+      "covered_cells": [
+        [
+          0,
+          1
+        ],
+        [
+          0,
+          2
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          1,
+          2
+        ],
+        [
+          2,
+          0
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          2,
+          2
+        ]
+      ],
+      "covered_cell_count": 8,
+      "covered_rows": [
+        0,
+        1,
+        2
+      ],
+      "covered_row_count": 3,
+      "covered_columns": [
+        0,
+        1,
+        2
+      ],
+      "covered_column_count": 3
+    }
+  },
+  "metrics": {
+    "count": 180,
+    "signed_median_px": 1.0,
+    "abs_vertical_px": {
+      "mean": 1.1582673814561633,
+      "median": 1.0,
+      "p95": 3.0,
+      "p99": 4.420000000000016,
+      "max": 9.0,
+      "rms": 1.5934612195526836
+    },
+    "fraction_abs_vertical_gt_1px": 0.24444444444444444,
+    "fraction_abs_vertical_gt_2px": 0.07777777777777778
+  },
+  "validation": {
+    "status": "insufficient",
+    "sufficient": false,
+    "sufficient_numeric": 0,
+    "passed": false,
+    "pass_numeric": 0,
+    "support_checks": [
+      {
+        "id": "pairs_with_common_tags",
+        "value": 14,
+        "compare": "ge",
+        "limit": 12,
+        "passed": true
+      },
+      {
+        "id": "matched_corners",
+        "value": 180,
+        "compare": "ge",
+        "limit": 600,
+        "passed": false
+      },
+      {
+        "id": "grid_cells",
+        "value": 8,
+        "compare": "ge",
+        "limit": 6,
+        "passed": true
+      },
+      {
+        "id": "grid_rows",
+        "value": 3,
+        "compare": "ge",
+        "limit": 2,
+        "passed": true
+      },
+      {
+        "id": "grid_columns",
+        "value": 3,
+        "compare": "ge",
+        "limit": 2,
+        "passed": true
+      }
+    ],
+    "gate_checks": [
+      {
+        "id": "median_abs_vertical_px",
+        "value": 1.0,
+        "compare": "le",
+        "limit": 1.0,
+        "passed": true
+      },
+      {
+        "id": "p95_abs_vertical_px",
+        "value": 3.0,
+        "compare": "le",
+        "limit": 1.5,
+        "passed": false
+      },
+      {
+        "id": "p99_abs_vertical_px",
+        "value": 4.420000000000016,
+        "compare": "le",
+        "limit": 2.0,
+        "passed": false
+      },
+      {
+        "id": "fraction_abs_vertical_gt_2px",
+        "value": 0.07777777777777778,
+        "compare": "le",
+        "limit": 0.01,
+        "passed": false
+      }
+    ]
+  },
+  "per_pair": [
+    {
+      "stem": "0000",
+      "left_tags_detected": 10,
+      "right_tags_detected": 9,
+      "common_tags": 6,
+      "matched_corners": 24,
+      "signed_median_px": 1.0,
+      "median_abs_vertical_px": 1.0,
+      "p95_abs_vertical_px": 2.0,
+      "max_abs_vertical_px": 2.0
+    },
+    {
+      "stem": "0001",
+      "left_tags_detected": 6,
+      "right_tags_detected": 6,
+      "common_tags": 1,
+      "matched_corners": 4,
+      "signed_median_px": 0.5,
+      "median_abs_vertical_px": 0.5,
+      "p95_abs_vertical_px": 1.0,
+      "max_abs_vertical_px": 1.0
+    },
+    {
+      "stem": "0002",
+      "left_tags_detected": 4,
+      "right_tags_detected": 3,
+      "common_tags": 1,
+      "matched_corners": 4,
+      "signed_median_px": 0.5,
+      "median_abs_vertical_px": 0.5,
+      "p95_abs_vertical_px": 2.6999999999999993,
+      "max_abs_vertical_px": 3.0
+    },
+    {
+      "stem": "0003",
+      "left_tags_detected": 13,
+      "right_tags_detected": 16,
+      "common_tags": 9,
+      "matched_corners": 36,
+      "signed_median_px": 1.0,
+      "median_abs_vertical_px": 1.0,
+      "p95_abs_vertical_px": 2.0,
+      "max_abs_vertical_px": 2.0
+    },
+    {
+      "stem": "0004",
+      "left_tags_detected": 12,
+      "right_tags_detected": 13,
+      "common_tags": 4,
+      "matched_corners": 16,
+      "signed_median_px": 1.0,
+      "median_abs_vertical_px": 1.0,
+      "p95_abs_vertical_px": 2.0,
+      "max_abs_vertical_px": 2.0
+    },
+    {
+      "stem": "0005",
+      "left_tags_detected": 9,
+      "right_tags_detected": 14,
+      "common_tags": 8,
+      "matched_corners": 32,
+      "signed_median_px": 1.0,
+      "median_abs_vertical_px": 1.0,
+      "p95_abs_vertical_px": 4.899999999999999,
+      "max_abs_vertical_px": 9.0
+    },
+    {
+      "stem": "0006",
+      "left_tags_detected": 9,
+      "right_tags_detected": 10,
+      "common_tags": 5,
+      "matched_corners": 20,
+      "signed_median_px": 1.0,
+      "median_abs_vertical_px": 1.0,
+      "p95_abs_vertical_px": 3.6976333618164063,
+      "max_abs_vertical_px": 3.795654296875
+    },
+    {
+      "stem": "0007",
+      "left_tags_detected": 2,
+      "right_tags_detected": 4,
+      "common_tags": 1,
+      "matched_corners": 4,
+      "signed_median_px": 0.5,
+      "median_abs_vertical_px": 1.5,
+      "p95_abs_vertical_px": 2.8499999999999996,
+      "max_abs_vertical_px": 3.0
+    },
+    {
+      "stem": "0008",
+      "left_tags_detected": 2,
+      "right_tags_detected": 3,
+      "common_tags": 0,
+      "matched_corners": 0,
+      "signed_median_px": null,
+      "median_abs_vertical_px": null,
+      "p95_abs_vertical_px": null,
+      "max_abs_vertical_px": null
+    },
+    {
+      "stem": "0009",
+      "left_tags_detected": 5,
+      "right_tags_detected": 6,
+      "common_tags": 1,
+      "matched_corners": 4,
+      "signed_median_px": 1.0,
+      "median_abs_vertical_px": 1.5,
+      "p95_abs_vertical_px": 2.8499999999999996,
+      "max_abs_vertical_px": 3.0
+    },
+    {
+      "stem": "0010",
+      "left_tags_detected": 2,
+      "right_tags_detected": 7,
+      "common_tags": 1,
+      "matched_corners": 4,
+      "signed_median_px": 1.0,
+      "median_abs_vertical_px": 1.0,
+      "p95_abs_vertical_px": 1.0,
+      "max_abs_vertical_px": 1.0
+    },
+    {
+      "stem": "0011",
+      "left_tags_detected": 7,
+      "right_tags_detected": 9,
+      "common_tags": 3,
+      "matched_corners": 12,
+      "signed_median_px": 1.0,
+      "median_abs_vertical_px": 1.0,
+      "p95_abs_vertical_px": 2.4499999999999993,
+      "max_abs_vertical_px": 3.0
+    },
+    {
+      "stem": "0012",
+      "left_tags_detected": 5,
+      "right_tags_detected": 4,
+      "common_tags": 2,
+      "matched_corners": 8,
+      "signed_median_px": 1.0,
+      "median_abs_vertical_px": 1.0,
+      "p95_abs_vertical_px": 1.0,
+      "max_abs_vertical_px": 1.0
+    },
+    {
+      "stem": "0013",
+      "left_tags_detected": 4,
+      "right_tags_detected": 5,
+      "common_tags": 2,
+      "matched_corners": 8,
+      "signed_median_px": 1.0,
+      "median_abs_vertical_px": 1.0,
+      "p95_abs_vertical_px": 1.6499999999999995,
+      "max_abs_vertical_px": 2.0
+    },
+    {
+      "stem": "0014",
+      "left_tags_detected": 3,
+      "right_tags_detected": 3,
+      "common_tags": 0,
+      "matched_corners": 0,
+      "signed_median_px": null,
+      "median_abs_vertical_px": null,
+      "p95_abs_vertical_px": null,
+      "max_abs_vertical_px": null
+    },
+    {
+      "stem": "0015",
+      "left_tags_detected": 6,
+      "right_tags_detected": 5,
+      "common_tags": 1,
+      "matched_corners": 4,
+      "signed_median_px": 1.0,
+      "median_abs_vertical_px": 2.0,
+      "p95_abs_vertical_px": 3.0,
+      "max_abs_vertical_px": 3.0
+    }
+  ],
+  "provenance": {
+    "tool": "tools/validate_stereo_rectification.py",
+    "tool_sha256": "cdbe165c176bd5db80040bacb955007c19d13d8d50a16ed7eb501706e1b68b0c",
+    "current_capture_tool_reference": {
+      "path": "tools/capture.py",
+      "sha256": "67052e8ed75d67ed0ce36ea94cedc38f53b80535e9c80d9dafda2c1112ffdce1",
+      "role": "implementation_reference_not_historical_capture_proof"
+    },
+    "command": [
+      "python",
+      "tools/validate_stereo_rectification.py"
+    ],
+    "generated_at": "2026-08-31T11:53:03.611560+00:00",
+    "python": "3.13.11",
+    "opencv": "4.13.0",
+    "numpy": "2.4.4",
+    "git": {
+      "commit": "471f2c3b0afe1fb73b8cb3ff03a3052b7170c8f8",
+      "worktree_dirty": true
+    }
+  }
+}

@@ -2,6 +2,31 @@
 
 ## [Unreleased]
 
+- Added a frozen, reproducible acceptance test for firmware/SDK-delivered D435i
+  IR1/IR2 epipolar alignment. It uses an independent 16-pair holdout with no
+  remap or fitted parameters, preserves insufficient/negative outcomes, and
+  reports the non-blocking verdict inside the existing IR calibration card.
+- Generalized the WebGL2 viewer from depth images to native xyz point streams,
+  with range/intensity/RGB/height rendering and source-aware controls.
+- Added ROS 2 point-topic discovery and generic `PointCloud2` decoding (QoS,
+  padded organized clouds, endianness, FLOAT32/FLOAT64 coordinates, optional
+  intensity/RGB), plus direct compatibility with an existing Livox CustomMsg
+  publisher.
+- Added `view_pointcloud.sh` for MID-360S, arbitrary ROS 2 topics, D435i and
+  hardware-free synthetic point streams. ROS Jazzy runs in an isolated
+  system-Python 3.12 venv rather than the calibration Conda environment.
+- Added a same-HTML fused view: live D435i and MID-360S inputs are transformed
+  into one `camera_color_optical_frame` canvas. The UI no longer opens two
+  point-cloud windows and binds startup to the selected rig extrinsic.
+- Implemented the direct LiDAR-camera capture/solve/import workflow and
+  published a five-scene `LOCAL operational` transform for the documented
+  mount and fused viewer.
+- Added a post-start stream-freshness watchdog: five seconds without frames is
+  a hard disconnect, the backend exits, D435i always releases its pipeline,
+  and the fused launcher cascades cleanup after an unplug.
+- Added portable, rig-bound result handling with explicit provenance tiers for
+  the direct MID-360S–D435i 6DoF extrinsic.
+
 ## [0.2.0] — 2026-08-28
 
 - **The verdict layer is data.** 24 checks moved from prose into
@@ -19,8 +44,8 @@
 - Renamed `d435i-calibration-field-guide` → `RGBD-FullCalib`
 - Rig photos added
 
-See [ROADMAP.md](ROADMAP.md) — next up: Mid-360 + LiDAR-camera extrinsics
-(v0.3, hardware ordered).
+At the 0.2.0 release, the next planned stage was Mid-360 + LiDAR-camera
+extrinsics; see the current [ROADMAP.md](ROADMAP.md) for its implemented status.
 
 ## [0.1.0] — 2026-08-28
 

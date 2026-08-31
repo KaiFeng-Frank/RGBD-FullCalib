@@ -1,0 +1,4 @@
+# This is the local experiment bundle (raw bags, solver products and attempt
+# logs). The portable, shipped transform lives in results/ with source hashes.
+*
+!.gitignore

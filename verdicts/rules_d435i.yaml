@@ -16,6 +16,7 @@ sources:
   pixellock:    {file: results/pixellock_model.json,        format: json}
   multipath:    {file: results/multipath_corner.json,       format: json}
   reflect:      {file: results/reflectivity_validity.json,  format: json}
+  stereo_rect:  {file: results/stereo_rectification_validation.json, format: json}
 
 checks:
   # ── RGB 内参 ──
@@ -69,6 +70,24 @@ checks:
     compare: le
     verdict_pass: 跨采集一致
     verdict_fail: 两次标定基线不一致 —— 有会话质量问题
+  - id: stereo_rect_support
+    stage: ir
+    name: 原样 IR 双目验收样本充分性
+    value: {expr: "s['stereo_rect']['validation']['sufficient_numeric']"}
+    reference: {expr: "1", label: 冻结充分性门}
+    compare: ge
+    severity_fail: warn
+    verdict_pass: 独立留出集支持充分
+    verdict_fail: 只能判 INSUFFICIENT，不得声称硬件立体校正通过或失败
+  - id: stereo_rect_acceptance
+    stage: ir
+    name: 原样 IR 双目极线验收（全部门）
+    value: {expr: "s['stereo_rect']['validation']['pass_numeric']"}
+    reference: {expr: "1", label: PASS}
+    compare: ge
+    severity_fail: warn
+    verdict_pass: 原样交付帧立体校正验收通过，未生成或替换任何标定参数
+    verdict_fail: 非阻塞告警；当前 RGB-D 主链不受影响，切换 Stereo/VIO 前重新采集并验收
 
   # ── 深度质量 ──
   - id: depth_flatness

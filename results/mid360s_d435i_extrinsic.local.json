@@ -1,0 +1,114 @@
+{
+  "created_utc": "2026-08-31T21:01:24Z",
+  "devices": [
+    {
+      "model": "Livox MID-360S",
+      "role": "lidar",
+      "serial": "ARMDN6B0030122"
+    },
+    {
+      "model": "Intel RealSense D435i",
+      "role": "rgbd",
+      "serial": "947122070908"
+    }
+  ],
+  "local_schema": "d435i_calib/lidar_camera_extrinsic_local/v1",
+  "frame_convention": {
+    "equation": "p_camera = T_camera_lidar * p_lidar",
+    "from": "livox_frame",
+    "to": "camera_color_optical_frame"
+  },
+  "method": "scene06-scene10 normal-aware dense RGB-D to LiDAR alignment",
+  "method_metadata": {
+    "data_policy": "Five static paired clouds (scene06 through scene10) all participate in this operational fit.",
+    "acceptance_tier": "LOCAL is active for the recorded device and mount; VALIDATED is the independent acceptance tier.",
+    "optimizer": "18 mm voxel, normal-aware symmetric GICP, equal scene leverage",
+    "status_note": "LOCAL operational calibration bound to this mounted rig and its recorded device identities."
+  },
+  "mount_session_id": "a56af70a-da0b-49d2-bc84-540c37cb3b05",
+  "next_step": "Loaded automatically by the fused point-cloud viewer for this rig; use --extrinsic to select another rig's transform.",
+  "result": {
+    "T_camera_lidar": [
+      [
+        0.9997396602879078,
+        -0.022703607212747123,
+        -0.0022710937779746743,
+        0.01680475337608131
+      ],
+      [
+        0.003487322581259382,
+        0.2504068489720626,
+        -0.9681344165812396,
+        -0.08230464690804087
+      ],
+      [
+        0.02254884095986525,
+        0.9678744527093439,
+        0.25042083292720424,
+        -0.043713326821871804
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "geometry_alignment_inlier_median_mm": 10.018649066372436,
+    "geometry_alignment_inlier_p90_mm": 16.873144671833998,
+    "independent_holdout_available": false,
+    "multi_seed_convergence_rotation_deg": 0.007197157860239566,
+    "multi_seed_convergence_translation_mm": 0.12028129967133158,
+    "pose_count": 5,
+    "scene_forward_nn_median_mm": {
+      "scene06": 12.505316578522413,
+      "scene07": 13.68577990492146,
+      "scene08": 11.88331553310594,
+      "scene09": 11.035358383928124,
+      "scene10": 11.699297922555976
+    }
+  },
+  "rig_id": "mid360s-d435i-01",
+  "schema_version": 1,
+  "source_data": [
+    {
+      "path": "data/lidar_camera_extrinsic_supplement/rgbd_validation/scene06/clouds.npz",
+      "role": "operational_fit",
+      "sha256": "670f8626ff199885b7e41d926c45464292444894e07f569cd4816b8765a973b7"
+    },
+    {
+      "path": "data/lidar_camera_extrinsic_supplement/rgbd_validation/scene07/clouds.npz",
+      "role": "operational_fit",
+      "sha256": "33c2c3383482216fd5505f9f96040932f51899a6386269e74bd425e1d7109f55"
+    },
+    {
+      "path": "data/lidar_camera_extrinsic_supplement/holdout/rgbd_validation/scene08/clouds.npz",
+      "role": "operational_fit",
+      "sha256": "7bb71996d7107faa9ca98e0e97bf72003e2260b1ed1d81e978a60a9d3d866fac"
+    },
+    {
+      "path": "data/lidar_camera_extrinsic_supplement/rgbd_validation/scene09/clouds.npz",
+      "role": "operational_fit",
+      "sha256": "ebb811b199b47b73580b05364cef4499ba4c10ba6414f84bd62adce9ea99c033"
+    },
+    {
+      "path": "data/lidar_camera_extrinsic_supplement/rgbd_validation/scene10/clouds.npz",
+      "role": "operational_fit",
+      "sha256": "283dbad9ff6fd9b76176de64fd7829f8a7a668224c42b6f0c2cc4800b18d405d"
+    }
+  ],
+  "status": "operational",
+  "summary": {
+    "candidate": "LOCAL operational · current rigid mount",
+    "fit_scenes": "scene06, scene07, scene08, scene09, scene10",
+    "geometry_alignment": "optimizer inliers: median 10.019 mm, P90 16.873 mm",
+    "scope": "bound to the recorded device and mount session",
+    "multi_seed_convergence": "0.00720 deg / 0.120 mm",
+    "translation_lidar_to_camera_m": [
+      0.01680475337608131,
+      -0.08230464690804087,
+      -0.043713326821871804
+    ]
+  },
+  "task_id": "mid360s_d435i_ext"
+}

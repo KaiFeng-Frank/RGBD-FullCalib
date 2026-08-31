@@ -1,24 +1,28 @@
 # RGBD-FullCalib
 
-**Building a one-stop, multi-sensor calibration workbench — where every parameter
-(camera, IMU, LiDAR, cross-sensor) comes back with a verdict: checked against
-references from *outside* the optimization, visualized, and flagged before a bad
-number ever reaches your SLAM stack. v0.1 shipped the first full instance: one
-Intel RealSense D435i, end to end; v0.2.0 shipped its verdict layer as 24
-declarative rules. The [roadmap](ROADMAP.md) goes much further.**
+**RGBD-FullCalib is an open, one-stop multi-sensor calibration workbench for
+cameras, IMUs, LiDARs and their cross-sensor transforms. It turns calibration
+outputs into visualized, machine-readable results with explicit deployment
+scope. v0.1 shipped one Intel RealSense D435i end to end; v0.2.0 shipped its
+verdict layer as 24 declarative rules; v0.3 implements the direct LiDAR–camera
+chain, native MID-360S viewing, and one-canvas D435i/MID-360S fusion.**
 
 [中文版 README](README_zh.md) · field notes [CALIBRATION.md](CALIBRATION.md) (Chinese) ·
 error propagation [IMPACT_ANALYSIS.md](IMPACT_ANALYSIS.md) (Chinese) ·
 [ROADMAP](ROADMAP.md) · [CHANGELOG](CHANGELOG.md)
 
-![Live D435i point cloud with calibration controls](results/d435i_live_pointcloud_fullscreen.gif)
+![Live D435i and MID-360S fused point cloud in one camera-frame canvas](results/lidar_rgbd_fused_viewer.gif)
+
+<p align="center">
+  <img src="docs/img/rig_mid360s_d435i_ready.jpg" alt="Rigid MID-360S and D435i sensor rig ready for use" width="47%">
+  <img src="docs/img/rig_mid360s_d435i_wiring.jpg" alt="MID-360S and D435i rig powered for data capture" width="47%">
+</p>
+<p align="center"><sub>Rigid MID-360S + D435i assembly: clean ready state (left), powered capture state (right)</sub></p>
 
 Calibration's worst failure mode is **looking beautiful while being consistently wrong**.
-Reprojection error tells you the model fits the data it was fitted to — nothing more.
-So every result here is checked against something *outside* the optimization:
-factory parameters, local gravity, repeated independent captures, a ruler.
-And when a parameter fails its check, the tool says so instead of letting a
-reassuring-looking bad number slip into the stack.
+RGBD-FullCalib pairs fitted metrics with physical references, repeated captures
+and device/mount identity, then publishes the applicable evidence tier beside
+the result. The same facts feed the CLI, report, GUI and live fused viewer.
 
 ## The rig
 
@@ -34,14 +38,7 @@ not to the ruler. `tagSpacing = 0.3` was confirmed four independent ways
 (ruler-measured 10.6 mm gap, the part number, the Kalibr default, and a
 reprojection-error sweep with a clear minimum at 0.30).
 
-## Where this is going
-
-The endgame is the calibration workbench that doesn't exist yet: describe your
-rig, capture with guidance, calibrate everything — intrinsics, IMU, LiDAR,
-cross-sensor extrinsics, time sync — and trust the output because every number
-carries its own verdict. Kalibr stops at vision+IMU; vendor tools are black
-boxes; the rest is scattered scripts and blog folklore. Full vision and version
-plan: [ROADMAP.md](ROADMAP.md).
+## What works today
 
 **v0.1, shipped**: one camera end to end (RGB intrinsics → stereo IR → RGB↔IR
 extrinsics → depth noise model → camera-IMU → accelerometer intrinsics → thermal
@@ -52,16 +49,17 @@ GUI, and ~15 documented pitfalls that cost real hours.
 the CLI, `REPORT.md`, and GUI cards, so a new device's verdicts mean new rules,
 not forked verdict code.
 
-The seams for v0.3 are already in the code: about half the tools are
-device-agnostic (marked in the layout below), and the viewer's source abstraction
-was built for a sensor that isn't a camera (a native point-stream channel is
-reserved for the Mid-360 on its way).
+**v0.3, implemented**: the viewer renders arbitrary ROS 2
+`sensor_msgs/msg/PointCloud2` streams and Livox `CustomMsg`, the direct
+LiDAR–camera workflow covers capture through import, and live D435i/MID-360S
+clouds share one camera-frame canvas. The documented mount runs with a
+five-scene operational extrinsic.
 
 ### Bring your camera
 
-If you run any stage on a different RGB-D / visual-inertial rig and hit a wall,
-open an issue with the traceback — real breakpoints, not guesses, decide what
-v0.3+ abstracts first. There is a standing issue for exactly this.
+Porting reports from other RGB-D / visual-inertial rigs are welcome. Concrete
+device traces guide new adapters while keeping the shared calibration and
+verdict paths stable.
 
 ## Results at a glance
 
@@ -75,9 +73,13 @@ v0.3+ abstracts first. There is a standing issue for exactly this.
 | Camera–IMU **translation** | three independent solutions spread 24.6–31.7 mm | the quantity itself is ~26 mm | ❌ **do not freeze** — 2–3 cm lever arm is structurally unobservable here |
 | Accelerometer intrinsics | largest non-orthogonality 2.83°; static ‖a‖ residual 3.76 mm/s² over 12 poses | local gravity from latitude/altitude | ✅ use; see negative result below |
 | Thermal drift model | depth scale −372 ppm/°C, focal +203 ppm/°C, gyro bias 0.0046 °/s/°C | R² per channel; principal-point drift **falsified** (R²=0.07) | ✅ compensate depth scale |
+| MID-360S→D435i extrinsic, documented mount | 5-scene dense alignment; geometry inliers median/P90 10.0/16.9 mm | multi-seed convergence 0.0072° / 0.12 mm | ✅ **current rig operational** |
 
 Machine-readable outputs live in [`data/*.yaml`](data) and [`results/*.json`](results);
 plots in [`results/*.png`](results).
+
+The LiDAR–camera transform belongs to the documented rigid installation;
+another rig or a remount gets its own transform through the same workflow.
 
 ## Negative results (published on purpose)
 
@@ -132,7 +134,8 @@ python -m verdicts --md REPORT.md       # markdown report (committed in repo)
 ```
 
 Every check that used to live as prose now lives in
-[`verdicts/rules_d435i.yaml`](verdicts/rules_d435i.yaml) — 24 rules, each one
+[`verdicts/rules_d435i.yaml`](verdicts/rules_d435i.yaml) — 26 rules now
+(the original 24 plus two non-blocking delivered-IR rectification checks), each one
 `{value expression, external reference, tolerance, action}` — executed by a
 ~200-line engine ([`verdicts/engine.py`](verdicts/engine.py)) that feeds the CLI
 report, [`REPORT.md`](REPORT.md), and the GUI cards from one source of truth.
@@ -147,22 +150,37 @@ yaml carries the comment explaining why.
 
 ## The GUI
 
-A WebGL2 point-cloud viewer with three tabs: **live cloud** (16-bit depth over WebSocket,
-in-shader deprojection), **calibration results** (the verdict cards above, generated
+A WebGL2 point-cloud viewer with three tabs: **live cloud** (16-bit depth with
+in-shader deprojection, or native xyz/intensity/RGB through VBOs), **calibration
+results** (the verdict cards above, generated
 from the actual yaml/json outputs — each card also carries two SLAM badges:
 *can this quantity be calibrated online?* (extrinsic rotation / time offset / IMU bias
 are standard online states in VINS-class systems; intrinsics and the depth chain are not)
 and *how hard does it hit SLAM?*, tiered with the measured propagation number behind
-each tier), and **pending experiments** (placeholders with why/how/cost). Thermal compensation can be applied to the live cloud with one checkbox.
+each tier), and **planned calibration stages** (why/how/cost). Thermal
+compensation can be applied to the live cloud with one checkbox.
 
 ![Latest calibration results with online-calibration and SLAM-impact badges](results/gui_slam_badges.png)
 
 ```bash
-cd viewer
-python server.py --source d435i --alt-emitter     # live, with emitter alternation
-python server.py --source synthetic               # no camera needed
-# open http://localhost:8080         (add ?static=1 for a screenshot-friendly page)
+./view_pointcloud.sh fused                      # D435i + MID-360S, one frame/canvas
+./view_pointcloud.sh mid360
+./view_pointcloud.sh ros2 /your/pointcloud/topic
+./view_pointcloud.sh ros2 auto                    # only when one candidate exists
+./view_pointcloud.sh d435i --alt-emitter
+./view_pointcloud.sh synthetic-points             # hardware-free native-stream test
 ```
+
+`fused` opens one `camera_color_optical_frame` canvas and transforms both live
+inputs into it. The documented rig's
+`results/mid360s_d435i_extrinsic.local.json` loads automatically;
+`--extrinsic PATH` selects another rig's result. The
+[generic LiDAR–camera workflow](docs/LIDAR_CAMERA_EXTRINSIC.md) covers capture,
+solving, result conventions, import, and fused viewing.
+
+The launcher opens `http://localhost:8080`, isolates ROS Jazzy from Conda, and
+shuts both backends down when either live stream disconnects. Native ROS 2
+clouds are rendered in their message frame as current-frame data.
 
 ## Repository layout
 
@@ -187,12 +205,18 @@ tools/                  [generic] = no RealSense dependency, reusable as-is
   apply_imu_intrinsic.py [generic] rewrite any bag with corrected accel (A/B experiments)
   imgs2bag.py           [generic] image folders → ROS1 bag
 verdicts/               the verdict engine + rules (see above); python -m verdicts
+view_pointcloud.sh      one entry for fused D435i+MID-360S, individual sensors,
+                        arbitrary ROS 2 topics and hardware-free sources;
+                        isolates Jazzy from Conda
 viewer/                 WebGL2 viewer + calib summary server (stdlib http + websockets)
+  lidar_calib.py        MID-360S rig-bound result and evidence lifecycle
   sources/base.py       [generic] source abstraction: dense depth maps and native
                         point streams are different render paths, split here on purpose
   sources/d435i.py      [D435i]   depth/color/IR via pyrealsense2
   sources/synthetic.py  [generic] camera-free test source
-  protocol.py           [generic] wire format; T_POINTS channel reserved for LiDAR
+  sources/synthetic_points.py [generic] native-stream renderer regression source
+  sources/ros2_points.py [generic] PointCloud2 discovery/decoding + optional Livox input
+  protocol.py           [generic] depth/image/native xyz-intensity-RGB wire format
 setup/                  udev rules, hardware setup
 data/                   calibration outputs (yaml/txt tracked; bags are not)
 results/                allan/thermal/depth models (json/yaml) + plots
@@ -212,8 +236,9 @@ Your unit's numbers **will** differ — that's the point of calibrating.
 
 ## Roadmap at a glance
 
-**v0.2.0 (shipped)** declarative verdict engine · **v0.3 (next)** Mid-360 + the full
-LiDAR-camera-IMU cross-sensor chain · **v0.4** more RGB-D families, rig as a
+**v0.2.0 (shipped)** declarative verdict engine · **v0.3 (current)** Mid-360
+native viewing, direct LiDAR–camera calibration, and fused rendering ·
+**v0.4** more RGB-D families, rig as a
 description file · **v0.5** the impact analyzer becomes a tool (input your motion
 profile, get *your* first-order error terms) · **v1.0** guided capture,
 calibration regression, searchable pitfall base — the workbench.
@@ -227,8 +252,8 @@ mapping and localization terms (with a LiDAR/LiDAR-camera comparison column for 
 Mid-360 rig), under one organizing principle: classify each error as zero-mean random /
 constant systematic / **state-dependent systematic** — the third class is what breaks
 maps (double walls from thermal depth-scale drift) and the second silently caps
-map-based localization. It also re-ranks which pending calibrations are worth doing
-at all. If you only calibrate what your application actually feels, you save days.
+map-based localization. It also ranks calibration priorities by measured impact.
+If you only calibrate what your application actually feels, you save days.
 
 ## License
 

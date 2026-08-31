@@ -16,7 +16,7 @@ import struct
 T_META = 0        # JSON:内参、深度单位、源信息
 T_DEPTH = 1       # uint16 深度图
 T_COLOR = 2       # JPEG
-T_POINTS = 3      # float32 xyz(+可选 intensity)—— 给 Mid-360 这类原生点云源
+T_POINTS = 3      # float32 xyz + 可选 intensity / uint8 rgb 原生点云
 T_STATS = 4       # JSON:帧率等运行时统计
 T_IR = 5          # JPEG:红外原图(唯一能看到散斑的视图)
 
@@ -28,7 +28,7 @@ T_IR = 5          # JPEG:红外原图(唯一能看到散斑的视图)
 #   points 负载 float32 -> 头 20 字节(4 的倍数)
 _H_DEPTH = struct.Struct('>B3xHHIdf')    # 24: type,pad,w,h,seq,t,depth_scale
 _H_COLOR = struct.Struct('>B3xHHId')     # 20: type,pad,w,h,seq,t (color 与 ir 共用)
-_H_POINTS = struct.Struct('>BB2xIId')    # 20: type,has_intensity,pad,count,seq,t
+_H_POINTS = struct.Struct('>BB2xIId')    # 20: type,flags,pad,count,seq,t
 _H_IR = struct.Struct('>BB2xHHId')       # 20: type,laser_on,pad,w,h,seq,t
 
 
@@ -54,11 +54,31 @@ def pack_ir(seq, t, w, h, jpeg_bytes, laser_on=1):
     return _H_IR.pack(T_IR, int(laser_on), w, h, seq, t) + jpeg_bytes
 
 
-def pack_points(seq, t, xyz, intensity=None):
-    """xyz: (N,3) float32;intensity: (N,) float32 或 None"""
+def pack_points(seq, t, xyz, intensity=None, rgb=None):
+    """Pack a native point stream.
+
+    Wire layout after the 20-byte header is always ``xyz[N,3] float32``;
+    flag bit 0 appends ``intensity[N] float32`` and bit 1 appends
+    ``rgb[N,3] uint8``.  Intensity is normalized to [0, 1] by the source.
+    """
+    import numpy as np
+
+    xyz = np.asarray(xyz, dtype='<f4', order='C')
+    if xyz.ndim != 2 or xyz.shape[1] != 3:
+        raise ValueError(f'xyz must have shape (N, 3), got {xyz.shape}')
     n = len(xyz)
-    head = _H_POINTS.pack(T_POINTS, 1 if intensity is not None else 0, n, seq, t)
-    body = xyz.astype('<f4').tobytes()
+    flags = 0
+    chunks = [xyz.tobytes()]
     if intensity is not None:
-        body += intensity.astype('<f4').tobytes()
-    return head + body
+        intensity = np.asarray(intensity, dtype='<f4', order='C').reshape(-1)
+        if len(intensity) != n:
+            raise ValueError('intensity length must match xyz')
+        flags |= 1
+        chunks.append(intensity.tobytes())
+    if rgb is not None:
+        rgb = np.asarray(rgb, dtype=np.uint8, order='C')
+        if rgb.shape != (n, 3):
+            raise ValueError(f'rgb must have shape ({n}, 3), got {rgb.shape}')
+        flags |= 2
+        chunks.append(rgb.tobytes())
+    return _H_POINTS.pack(T_POINTS, flags, n, seq, t) + b''.join(chunks)

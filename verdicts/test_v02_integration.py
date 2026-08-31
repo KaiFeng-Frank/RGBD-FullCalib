@@ -33,11 +33,11 @@ class VerdictPipelineIntegrationTest(unittest.TestCase):
         cls.rule_doc = yaml.safe_load(RULES.read_text(encoding='utf-8'))
         cls.results = evaluate(str(RULES))
 
-    def test_rules_have_24_unique_checks(self):
+    def test_rules_have_26_unique_checks(self):
         checks = self.rule_doc['checks']
         ids = [check['id'] for check in checks]
 
-        self.assertEqual(len(checks), 24)
+        self.assertEqual(len(checks), 26)
         self.assertEqual(len(ids), len(set(ids)), f'duplicate rule ids: {ids}')
         self.assertEqual([result['id'] for result in self.results], ids)
 
@@ -77,7 +77,21 @@ class VerdictPipelineIntegrationTest(unittest.TestCase):
         from viewer import calib_summary
 
         self.assertEqual(Path(calib_summary._RULES).resolve(), RULES)
-        self.assertEqual(calib_summary._VERDICTS, gui)
+        # The viewer re-evaluates on each collection so newly completed
+        # calibration artifacts appear without restarting the server.
+        self.assertEqual(calib_summary._current_verdicts(), gui)
+
+    def test_stereo_validation_stays_inside_the_existing_ir_card(self):
+        from viewer import calib_summary
+
+        summary = calib_summary.collect()
+        ir_cards = [row for row in summary['stages'] if row['id'] == 'ir']
+        self.assertEqual(len(ir_cards), 1)
+        labels = [row[0] for row in ir_cards[0]['rows']]
+        self.assertEqual(labels.count('原样 IR 硬件校正验收'), 1)
+        self.assertNotIn('ir', {row['id'] for row in summary['pending']})
+        check_names = [row[0] for row in ir_cards[0]['checks']]
+        self.assertEqual(sum('原样 IR 双目' in name for name in check_names), 2)
 
     def test_cli_json_matches_engine_evaluate(self):
         with tempfile.TemporaryDirectory(prefix='d435i-verdict-test-') as tmp:

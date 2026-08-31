@@ -18,6 +18,7 @@ class Source:
         self.on_frame = on_frame        # on_frame(kind, payload_dict)
         self._stop = threading.Event()
         self._thread = None
+        self.error = None
 
     def meta(self):
         """返回该源的静态信息(内参、单位、可用通道等),开流前调用。"""
@@ -30,10 +31,17 @@ class Source:
         self._thread = threading.Thread(target=self._guarded, daemon=True)
         self._thread.start()
 
+    def is_alive(self):
+        return self._thread is not None and self._thread.is_alive()
+
+    def stop_requested(self):
+        return self._stop.is_set()
+
     def _guarded(self):
         try:
             self._run()
         except Exception as e:
+            self.error = e
             import traceback
             print(f'[{self.name}] 源线程异常: {e}')
             traceback.print_exc()

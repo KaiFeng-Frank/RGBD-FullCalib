@@ -61,6 +61,28 @@
     "verdict": "跨采集一致"
   },
   {
+    "id": "stereo_rect_support",
+    "stage": "ir",
+    "name": "原样 IR 双目验收样本充分性",
+    "unit": "",
+    "value": 0.0,
+    "reference": 1.0,
+    "ref_label": "冻结充分性门",
+    "status": "warn",
+    "verdict": "只能判 INSUFFICIENT，不得声称硬件立体校正通过或失败"
+  },
+  {
+    "id": "stereo_rect_acceptance",
+    "stage": "ir",
+    "name": "原样 IR 双目极线验收（全部门）",
+    "unit": "",
+    "value": 0.0,
+    "reference": 1.0,
+    "ref_label": "PASS",
+    "status": "warn",
+    "verdict": "非阻塞告警；当前 RGB-D 主链不受影响，切换 Stereo/VIO 前重新采集并验收"
+  },
+  {
     "id": "depth_flatness",
     "stage": "depth",
     "name": "两轮独立平整度一致",

@@ -3,7 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>D435i 实时点云查看器</title>
+<title>通用实时点云查看器</title>
+<script>
+window.__VIEW_PARAMS=new URLSearchParams(location.search);
+document.documentElement.classList.toggle('dual',window.__VIEW_PARAMS.has('dual'));
+document.documentElement.classList.toggle('embed',window.__VIEW_PARAMS.has('embed'));
+document.documentElement.classList.toggle('overlay',window.__VIEW_PARAMS.has('overlay'));
+</script>
 <style>
 :root{
   --bg:#0d1117; --panel:#161b22; --line:#30363d; --fg:#e6edf3; --dim:#8b949e;
@@ -21,14 +27,19 @@ html,body{height:100%;background:var(--bg);color:var(--fg);
 .page{display:none;overflow:auto;min-height:0;grid-row:2}
 #nav{grid-row:1;align-self:start}
 .page.on{display:block}
-#page-live.on{display:grid;grid-template-rows:1fr 200px;overflow:hidden}
+#page-live.on{display:block;overflow:hidden}
+#singleLive{display:grid;grid-template-rows:1fr 200px;height:100%;min-height:0}
+#page-live.point-stream #singleLive{grid-template-rows:1fr}
+#page-live.point-stream #bottom{display:none}
 .wrap{padding:18px 22px;max-width:1100px}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:8px;
   padding:14px 16px;margin-bottom:14px}
 .card h3{font-size:13.5px;margin-bottom:2px;display:flex;align-items:center;gap:8px}
 .card .st{font-size:10.5px;padding:1px 7px;border-radius:10px;font-weight:500}
 .st.done{background:rgba(63,185,80,.16);color:var(--ok)}
+.st.local{background:rgba(88,166,255,.16);color:var(--accent)}
 .st.pending{background:rgba(210,153,34,.16);color:var(--warn)}
+.st.rework{background:rgba(248,81,73,.16);color:var(--err)}
 .card .src{font-size:10.5px;color:var(--dim);margin:3px 0 10px}
 .card table{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:9px}
 .card td{padding:3px 0;vertical-align:top}
@@ -86,12 +97,74 @@ button:hover{background:#30363d;border-color:var(--accent)}
 #hint{position:absolute;left:10px;bottom:10px;color:var(--dim);font-size:11px;pointer-events:none}
 #err{position:absolute;inset:0;display:none;align-items:center;justify-content:center;
   background:rgba(13,17,23,.9);color:var(--err);font-size:13px;text-align:center;padding:20px;white-space:pre-wrap}
+#dualLive{display:none;height:100%;min-height:0;padding:10px;gap:10px;
+  grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr)}
+.dual-note{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:16px;
+  padding:7px 11px;border:1px solid rgba(210,153,34,.45);border-radius:6px;
+  background:rgba(210,153,34,.08);color:var(--warn);font-size:11px}
+.dual-note b{color:var(--fg);font-weight:500}.dual-note span:last-child{color:var(--dim);text-align:right}
+.dual-note.validated{border-color:rgba(63,185,80,.45);background:rgba(63,185,80,.08);color:var(--ok)}
+.dual-note.operational{border-color:rgba(88,166,255,.48);background:rgba(88,166,255,.09);color:var(--accent)}
+.dual-note.draft{border:2px solid var(--err);background:rgba(248,81,73,.14);color:#ff8b86}
+.dual-note.draft b{font-size:14px;color:#ff8b86}
+.dual-panel{min-width:0;min-height:0;display:grid;grid-template-rows:auto minmax(0,1fr);
+  background:#05070a;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.dual-head{display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--panel);
+  border-bottom:1px solid var(--line);font-size:11px}
+.dual-head strong{font-size:12px}.dual-head .panel-meta{color:var(--dim);overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap;flex:1}.dual-head .panel-state{color:var(--warn)}
+.dual-head .panel-state.on{color:var(--ok)}
+.dual-panel iframe{width:100%;height:100%;border:0;background:var(--bg)}
+.dual-panel.type-error iframe{opacity:.16;pointer-events:none}
+.dual-panel.type-error .panel-meta,.dual-panel.type-error .panel-state{color:var(--err)}
+#overlayPanel{display:none;grid-column:1/-1}
+html.dual #overlayPanel{display:grid}
+#overlayBadge{display:none;position:absolute;left:50%;top:12px;transform:translateX(-50%);
+  z-index:3;padding:7px 13px;border-radius:6px;background:rgba(13,17,23,.9);
+  border:1px solid var(--ok);color:var(--ok);font-size:12px;font-weight:700;pointer-events:none}
+#overlayBadge.draft{display:block;border:3px solid var(--err);background:rgba(72,12,12,.94);
+  color:#fff;font-size:17px;letter-spacing:.08em;box-shadow:0 0 24px rgba(248,81,73,.45)}
+#overlayBadge.validated{display:block}
+#overlayBadge.operational{display:block;border-color:var(--accent);color:var(--accent)}
+#draftWatermark{display:none;position:absolute;inset:0;z-index:2;align-items:center;
+  justify-content:center;overflow:hidden;pointer-events:none;color:rgba(248,81,73,.18);
+  font:900 clamp(48px,9vw,150px)/1 ui-monospace,monospace;letter-spacing:.08em;
+  transform:rotate(-16deg);text-shadow:0 0 30px rgba(248,81,73,.12)}
+#draftWatermark.on{display:flex}
+#overlayControls{display:none}
+html.overlay #overlayControls{display:block}
+html.overlay #thermal{display:none}
+html.overlay #bottom{display:grid}
+html.overlay #singleLive{grid-template-rows:minmax(0,1fr) 200px}
+.overlay-source{border:1px solid var(--line);border-radius:6px;padding:8px 8px 2px;margin-bottom:8px}
+.overlay-source h3{font-size:11px;margin:0 0 7px;font-weight:600}
+.overlay-source.rgbd h3{color:#44d7e8}.overlay-source.lidar h3{color:#ff953f}
+html.dual #app{grid-template-columns:1fr}
+html.dual #side{display:none}
+html.dual #singleLive{display:none}
+html.dual #dualLive{display:grid}
+html.embed #nav{display:none}
+html.embed #main{grid-template-rows:1fr}
+html.embed .page{grid-row:1}
+html.embed #app{grid-template-columns:220px minmax(0,1fr)}
+html.embed #side{padding:10px}
+html.embed #singleLive{grid-template-rows:1fr 145px}
+html.embed input[type=range]{width:90px}
+html.embed select,html.embed input[type=text]{width:112px}
+@media(max-width:1050px){
+  html.dual body{overflow:auto}
+  html.dual #app{height:auto;min-height:100vh}
+  html.dual #main{min-height:100vh}
+  html.dual #page-live.on{overflow:auto}
+  html.dual #dualLive{grid-template-columns:1fr;grid-template-rows:auto minmax(520px,70vh) minmax(520px,70vh)}
+  html.dual .dual-note{grid-column:1}
+}
 </style>
 </head>
 <body>
 <div id="app">
   <div id="side">
-    <h1><span id="status"></span>点云查看器</h1>
+    <h1><span id="status"></span><span id="viewerTitle">点云查看器</span></h1>
     <div class="sub" id="srcline">未连接</div>
 
     <div class="grp">
@@ -102,27 +175,61 @@ button:hover{background:#30363d;border-color:var(--accent)}
 
     <div class="grp">
       <h2>渲染</h2>
-      <label><span>点大小</span><input type="range" id="psize" min="1" max="8" step="0.5" value="2"><b id="psizev">2</b></label>
+      <label id="globalPointSize"><span>点大小</span><input type="range" id="psize" min="1" max="8" step="0.5" value="2"><b id="psizev">2</b></label>
       <label><span>最远距离</span><input type="range" id="maxd" min="0.3" max="10" step="0.1" value="4"><b id="maxdv">4.0m</b></label>
       <label><span>最近距离</span><input type="range" id="mind" min="0.1" max="1.5" step="0.05" value="0.15"><b id="mindv">0.15m</b></label>
-      <label><span>着色</span>
+      <label id="globalShade"><span>着色</span>
         <select id="shade">
-          <option value="depth">深度伪彩</option>
-          <option value="color">相机彩色</option>
+          <option value="depth">距离 / 深度伪彩</option>
+          <option value="color">RGB / 相机彩色</option>
+          <option value="intensity">反射强度</option>
           <option value="height">高度</option>
           <option value="flat">单色</option>
         </select></label>
-      <label><span>降采样</span>
+      <label id="globalStride"><span>降采样</span>
         <select id="stride">
           <option value="1">1×(全部)</option>
           <option value="2">2×</option>
           <option value="3">3×</option>
+          <option value="4">4×</option>
+          <option value="8">8×</option>
         </select></label>
       <label><span>显示坐标轴</span><input type="checkbox" id="axes" checked></label>
     </div>
 
+    <div class="grp" id="overlayControls">
+      <h2>雷视融合点云</h2>
+      <div class="overlay-source rgbd">
+        <h3>RGB-D</h3>
+        <label><span>显示</span><input type="checkbox" id="showRgbd" checked></label>
+        <label><span>点大小</span><input type="range" id="rgbdPsize" min="1" max="8" step="0.5" value="2"><b id="rgbdPsizev">2</b></label>
+        <label><span>像素步长</span><select id="rgbdStride">
+          <option value="1">1×（全部）</option><option value="2">2×</option>
+          <option value="3">3×</option><option value="4">4×</option><option value="8">8×</option>
+        </select></label>
+        <label><span>着色</span><select id="rgbdShade">
+          <option value="depth">深度 · 青→蓝</option><option value="color">相机彩色</option>
+          <option value="source">来源青色</option><option value="height">高度</option>
+        </select></label>
+      </div>
+      <div class="overlay-source lidar">
+        <h3>LiDAR</h3>
+        <label><span>显示</span><input type="checkbox" id="showLidar" checked></label>
+        <label><span>点大小</span><input type="range" id="lidarPsize" min="1" max="8" step="0.5" value="2"><b id="lidarPsizev">2</b></label>
+        <label><span>抽点步长</span><select id="lidarStride">
+          <option value="1">1×（全部）</option><option value="2">2×</option>
+          <option value="3">3×</option><option value="4">4×</option><option value="8">8×</option>
+        </select></label>
+        <label><span>着色</span><select id="lidarShade">
+          <option value="depth">距离 · 黄→红</option><option value="intensity">反射强度</option>
+          <option value="source">来源橙色</option><option value="height">高度</option>
+        </select></label>
+      </div>
+      <div class="note">两路均在 camera_color_optical_frame，单位米。默认按对数距离展开色带：RGB-D 青→蓝，LiDAR 黄→红。RGB-D 像素步长 2× 约保留 1/4，LiDAR 抽点步长 2× 约保留 1/2。</div>
+    </div>
+
     <div class="grp">
-      <h2>相机内参</h2>
+      <h2 id="metaTitle">相机内参</h2>
       <div class="kv" id="intr"><i>等待 meta…</i><b></b></div>
     </div>
 
@@ -131,7 +238,7 @@ button:hover{background:#30363d;border-color:var(--accent)}
       <div class="kv" id="rt"></div>
     </div>
 
-    <div class="grp">
+    <div class="grp" id="thermal">
       <h2>温漂</h2>
       <div class="kv" id="temp"><i>等待…</i><b></b></div>
       <canvas id="tcv" width="226" height="52"
@@ -150,33 +257,48 @@ button:hover{background:#30363d;border-color:var(--accent)}
     <div id="nav">
       <button data-p="live" class="on">实时点云</button>
       <button data-p="calib">标定结果</button>
-      <button data-p="todo">待办</button>
+      <button data-p="todo">标定项目</button>
     </div>
     <div class="page on" id="page-live">
-    <div id="glwrap">
-      <canvas id="gl"></canvas>
-      <div id="hud"></div>
-      <div id="hint">左键拖动=旋转　右键/中键=平移　滚轮=缩放</div>
-      <div id="err"></div>
-    </div>
-    <div id="bottom">
-      <div class="tile"><span class="lbl">深度图</span><canvas id="dcv"></canvas></div>
-      <div class="tile"><span class="lbl">彩色图</span><img id="cim" alt=""></div>
-      <div class="tile"><span class="lbl">红外 · 散斑帧</span><img id="iim" alt=""></div>
-      <div class="tile"><span class="lbl" id="irclbl">红外 · 干净帧</span><img id="icm" alt=""></div>
-    </div>
+      <div id="singleLive">
+        <div id="glwrap">
+          <canvas id="gl"></canvas>
+          <div id="draftWatermark">DRAFT · 未标定</div>
+          <div id="overlayBadge"></div>
+          <div id="hud"></div>
+          <div id="hint">左键拖动=旋转　右键/中键=平移　滚轮=缩放</div>
+          <div id="err"></div>
+        </div>
+        <div id="bottom">
+          <div class="tile"><span class="lbl">深度图</span><canvas id="dcv"></canvas></div>
+          <div class="tile"><span class="lbl">彩色图</span><img id="cim" alt=""></div>
+          <div class="tile"><span class="lbl">红外 · 散斑帧</span><img id="iim" alt=""></div>
+          <div class="tile"><span class="lbl" id="irclbl">红外 · 干净帧</span><img id="icm" alt=""></div>
+        </div>
+      </div>
+      <div id="dualLive">
+        <div class="dual-note" id="dualModeNote">
+          <b id="dualModeTitle">雷视融合视图 · 载入外参中</b>
+          <span id="dualModeDetail">RGB-D 与 LiDAR 将在 camera_color_optical_frame 中共用一个画布。</span>
+        </div>
+        <section class="dual-panel" id="overlayPanel">
+          <div class="dual-head"><strong id="overlayPanelTitle">雷视融合点云</strong>
+            <span class="panel-meta" id="overlayPanelMeta">等待外参</span>
+            <span class="panel-state" id="overlayPanelState">连接中</span></div>
+          <iframe id="overlayFrame" title="MID-360S 与 D435i 实时融合点云"></iframe>
+        </section>
+      </div>
     </div>
 
     <div class="page" id="page-calib"><div class="wrap">
       <h2 class="sec">标定结果</h2>
-      <div class="sub2">全部数据来自本机实测。每项下方的核查行是与外部真值或独立测量的对照 ——
-        标定这行最怕的是"看起来漂亮但错得一致",有外部参照才算数。</div>
+      <div class="sub2" id="calibSub">当前 rig 生效外参与定量验收结果统一归档于此。</div>
       <div id="calibList"></div>
     </div></div>
 
     <div class="page" id="page-todo"><div class="wrap">
-      <h2 class="sec">待办</h2>
-      <div class="sub2">已销账两项(深度非线性、多径 —— 结果在「标定结果」页判决卡里)。剩四项:一项差受控摆位,一项差温度扫描,两项需要设备。</div>
+      <h2 class="sec">标定项目</h2>
+      <div class="sub2" id="todoSub">读取标定项目状态…</div>
       <div id="todoList"></div>
     </div></div>
   </div>
@@ -184,7 +306,17 @@ button:hover{background:#30363d;border-color:var(--accent)}
 <script>
 "use strict";
 const $=id=>document.getElementById(id);
+const escHtml=t=>String(t).replace(/[&<>"']/g,m=>({
+  '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 const T_META=0,T_DEPTH=1,T_COLOR=2,T_POINTS=3,T_STATS=4,T_IR=5;
+const queryParams=window.__VIEW_PARAMS||new URLSearchParams(location.search);
+const DUAL=queryParams.has('dual'), EMBED=queryParams.has('embed');
+const OVERLAY=queryParams.has('overlay');
+const AUTOROTATE=queryParams.has('autorotate');
+const ROLE=queryParams.get('role')||'single';
+if(ROLE==='rgbd') $("viewerTitle").textContent='RGB-D 查看器';
+if(ROLE==='lidar') $("viewerTitle").textContent='LiDAR 查看器';
+if(ROLE==='overlay') $("viewerTitle").textContent='雷视融合点云';
 
 /* ---------- 极简矩阵 ---------- */
 function mul(a,b){const o=new Float32Array(16);
@@ -221,7 +353,8 @@ uniform mat4  uMVP;
 uniform float uPS, uMin, uMax;
 uniform float uDScale;   // 深度尺度补偿 (1+ppm)
 uniform vec2  uDPP;      // 主点补偿 (Δcx, Δcy)
-uniform int   uShade, uStride;
+uniform vec3  uFlatColor;
+uniform int   uShade, uStride, uPalette;
 uniform vec2  uColorSize;
 out vec3 vC; out float vDrop;
 
@@ -232,6 +365,23 @@ vec3 turbo(float t){          // 近似 turbo colormap,比 jet 在暗端更可�
     23.31+t*(557.33+t*(1225.33+t*(-3574.96+t*(1073.77+t*707.56)))),
     27.2 +t*(3211.1+t*(-15327.97+t*(27814.0+t*(-22569.18+t*6838.66))))
   )/255.0,0.0,1.0);
+}
+float depthCoord(float d){
+  float lo=max(uMin,0.001),hi=max(uMax,lo+0.001);
+  return clamp(log(max(d,lo)/lo)/log(hi/lo),0.0,1.0);
+}
+vec3 depthPalette(float t){
+  if(uPalette==1){ // RGB-D: near ice/cyan -> mid cyan -> far blue
+    return t<0.5
+      ?mix(vec3(.75,1.0,1.0),vec3(.02,.78,.88),t*2.0)
+      :mix(vec3(.02,.78,.88),vec3(.16,.12,.82),(t-.5)*2.0);
+  }
+  if(uPalette==2){ // LiDAR: near yellow -> mid orange -> far red/magenta
+    return t<0.5
+      ?mix(vec3(1.0,1.0,.22),vec3(1.0,.46,.04),t*2.0)
+      :mix(vec3(1.0,.46,.04),vec3(.82,.04,.32),(t-.5)*2.0);
+  }
+  return turbo(1.0-t);
 }
 void main(){
   int W=int(uSize.x);
@@ -247,10 +397,10 @@ void main(){
   vec4 p=vec4(X,-Y,-d,1.0);        // 相机坐标(y下,z前) -> 观察坐标(y上,z后)
   gl_Position=uMVP*p;
   gl_PointSize=uPS;
-  if(uShade==0)       vC=turbo(1.0-(d-uMin)/max(uMax-uMin,1e-6));
+  if(uShade==0)       vC=depthPalette(depthCoord(d));
   else if(uShade==1)  vC=texture(uColor,vec2(float(x)/uSize.x,float(y)/uSize.y)).rgb;
   else if(uShade==2)  vC=turbo(clamp((-Y+0.8)/1.6,0.0,1.0));
-  else                vC=vec3(0.72,0.78,0.86);
+  else                vC=uFlatColor;
 }`;
 const FS=`#version 300 es
 precision highp float;
@@ -265,16 +415,69 @@ void main(){gl_Position=uMVP*vec4(aP,1.0);vC=aC;}`;
 const AFS=`#version 300 es
 precision highp float; in vec3 vC; out vec4 o; void main(){o=vec4(vC,1.0);}`;
 
+// Native xyz point streams (ROS PointCloud2 / Livox CustomMsg) already carry
+// 3-D coordinates, so they use a VBO path independent of depth-image projection.
+const NVS=`#version 300 es
+precision highp float; precision highp int;
+in vec3 aP; in float aI; in vec3 aRGB;
+uniform mat4 uMVP;
+uniform float uPS, uMin, uMax;
+uniform int uShade, uHasI, uHasRGB, uStride, uPalette;
+uniform vec3 uFlatColor;
+out vec3 vC; out float vDrop;
+vec3 turbo(float t){
+  t=clamp(t,0.0,1.0);
+  return clamp(vec3(
+    34.61+t*(1172.33+t*(-10793.56+t*(33300.12+t*(-38394.49+t*14825.05)))),
+    23.31+t*(557.33+t*(1225.33+t*(-3574.96+t*(1073.77+t*707.56)))),
+    27.2 +t*(3211.1+t*(-15327.97+t*(27814.0+t*(-22569.18+t*6838.66))))
+  )/255.0,0.0,1.0);
+}
+float depthCoord(float d){
+  float lo=max(uMin,0.001),hi=max(uMax,lo+0.001);
+  return clamp(log(max(d,lo)/lo)/log(hi/lo),0.0,1.0);
+}
+vec3 depthPalette(float t){
+  if(uPalette==1){
+    return t<0.5
+      ?mix(vec3(.75,1.0,1.0),vec3(.02,.78,.88),t*2.0)
+      :mix(vec3(.02,.78,.88),vec3(.16,.12,.82),(t-.5)*2.0);
+  }
+  if(uPalette==2){
+    return t<0.5
+      ?mix(vec3(1.0,1.0,.22),vec3(1.0,.46,.04),t*2.0)
+      :mix(vec3(1.0,.46,.04),vec3(.82,.04,.32),(t-.5)*2.0);
+  }
+  return turbo(1.0-t);
+}
+void main(){
+  float d=length(aP);
+  if(d<uMin||d>uMax||(uStride>1&&(gl_VertexID%uStride)!=0)){
+    vDrop=1.0;gl_Position=vec4(0,0,-9,1);gl_PointSize=0.0;return;
+  }
+  vDrop=0.0;gl_Position=uMVP*vec4(aP,1.0);gl_PointSize=uPS;
+  if(uShade==0)      vC=depthPalette(depthCoord(d));
+  else if(uShade==1) vC=uHasRGB==1?aRGB:(uHasI==1?turbo(aI):vec3(.72,.78,.86));
+  else if(uShade==2) vC=turbo(clamp((aP.y+2.0)/8.0,0.0,1.0));
+  else if(uShade==4) vC=uHasI==1?turbo(aI):vec3(.72,.78,.86);
+  else               vC=uFlatColor;
+}`;
+const NFS=`#version 300 es
+precision highp float;
+in vec3 vC; in float vDrop; out vec4 o;
+void main(){if(vDrop>0.5)discard;vec2 q=gl_PointCoord-.5;
+  if(dot(q,q)>.25)discard;o=vec4(vC,1.0);}`;
+
 function sh(type,src){const s=gl.createShader(type);gl.shaderSource(s,src);gl.compileShader(s);
   if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(s));return s;}
 function prog(vs,fs){const p=gl.createProgram();
   gl.attachShader(p,sh(gl.VERTEX_SHADER,vs));gl.attachShader(p,sh(gl.FRAGMENT_SHADER,fs));
   gl.linkProgram(p);if(!gl.getProgramParameter(p,gl.LINK_STATUS))throw new Error(gl.getProgramInfoLog(p));return p;}
 
-let P1,P2,texD,texC,axVao,axN=0,U={};
+let P1,P2,P3,texD,texC,axVao,axN=0,nVao,nPos,nInt,nRgb,U={},UN={},AN={};
 try{
-  P1=prog(VS,FS); P2=prog(AVS,AFS);
-  ["uDepth","uColor","uIntr","uSize","uScale","uMVP","uPS","uMin","uMax","uShade","uStride","uColorSize","uDScale","uDPP"]
+  P1=prog(VS,FS); P2=prog(AVS,AFS); P3=prog(NVS,NFS);
+  ["uDepth","uColor","uIntr","uSize","uScale","uMVP","uPS","uMin","uMax","uShade","uStride","uPalette","uColorSize","uDScale","uDPP","uFlatColor"]
     .forEach(n=>U[n]=gl.getUniformLocation(P1,n));
   U.aMVP=gl.getUniformLocation(P2,"uMVP");
   texD=gl.createTexture(); texC=gl.createTexture();
@@ -303,14 +506,35 @@ try{
   gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(C),gl.STATIC_DRAW);
   const lc=gl.getAttribLocation(P2,"aC");gl.enableVertexAttribArray(lc);gl.vertexAttribPointer(lc,3,gl.FLOAT,false,0,0);
   gl.bindVertexArray(null);
+
+  ["uMVP","uPS","uMin","uMax","uShade","uHasI","uHasRGB","uStride","uPalette","uFlatColor"]
+    .forEach(n=>UN[n]=gl.getUniformLocation(P3,n));
+  AN.p=gl.getAttribLocation(P3,"aP");
+  AN.i=gl.getAttribLocation(P3,"aI");
+  AN.rgb=gl.getAttribLocation(P3,"aRGB");
+  nVao=gl.createVertexArray();gl.bindVertexArray(nVao);
+  nPos=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,nPos);
+  gl.enableVertexAttribArray(AN.p);gl.vertexAttribPointer(AN.p,3,gl.FLOAT,false,0,0);
+  nInt=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,nInt);
+  gl.enableVertexAttribArray(AN.i);gl.vertexAttribPointer(AN.i,1,gl.FLOAT,false,0,0);
+  nRgb=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,nRgb);
+  gl.enableVertexAttribArray(AN.rgb);
+  gl.vertexAttribPointer(AN.rgb,3,gl.UNSIGNED_BYTE,true,0,0);
+  gl.bindVertexArray(null);
 }catch(e){ $("err").style.display="flex"; $("err").textContent="着色器编译失败:\n"+e.message; }
 
 /* ---------- 状态 ---------- */
-const S={meta:null,dw:0,dh:0,scale:0.001,hasD:false,hasC:false,
-  yaw:0.6,pitch:0.35,dist:3.2,tx:0,ty:0,
-  fpsD:0,fpsC:0,lastD:0,lastC:0,pts:0,valid:0,rx:0,
+const S={meta:null,kind:"depth_image",dw:0,dh:0,scale:0.001,hasD:false,hasC:false,
+  hasP:false,hasPI:false,hasPRGB:false,nativeCount:0,
+  rgbdMeta:null,lidarMeta:null,extrinsic:null,overlayStats:{},overlayOnline:{rgbd:false,lidar:false},
+  yaw:0.6,pitch:0.35,dist:3.2,tx:0,ty:0,targetZ:-1.2,
+  viewCenter:[0,0,-1.2],viewDistance:3.2,
+  fpsD:0,fpsC:0,fpsP:0,lastD:0,lastC:0,lastP:0,pts:0,valid:0,rx:0,
   corr:null,hasModel:false,thist:[],fpsI:0,lastI:0,fpsIC:0,lastIC:0,sawClean:false};
-function resetView(){S.yaw=0.6;S.pitch=0.35;S.dist=3.2;S.tx=0;S.ty=0;}
+function resetView(){
+  S.yaw=0.6;S.pitch=0.35;S.dist=S.viewDistance;
+  S.tx=S.viewCenter[0];S.ty=S.viewCenter[1];S.targetZ=S.viewCenter[2];
+}
 
 /* ---------- 交互 ---------- */
 let drag=null;
@@ -323,12 +547,14 @@ addEventListener("mousemove",e=>{
   else{S.tx-=dx*0.003*S.dist;S.ty+=dy*0.003*S.dist;}
 });
 cv.addEventListener("contextmenu",e=>e.preventDefault());
-cv.addEventListener("wheel",e=>{S.dist=Math.max(0.3,Math.min(30,S.dist*Math.exp(e.deltaY*0.0012)));e.preventDefault();},{passive:false});
+cv.addEventListener("wheel",e=>{S.dist=Math.max(0.3,Math.min(200,S.dist*Math.exp(e.deltaY*0.0012)));e.preventDefault();},{passive:false});
 $("reset").onclick=resetView;
 
 const bind=(id,vid,fmt)=>{const el=$(id),o=$(vid);
   const f=()=>o.textContent=fmt?fmt(+el.value):el.value; el.oninput=f; f(); return el;};
 const elPS=bind("psize","psizev"),
+      elRgbdPS=bind("rgbdPsize","rgbdPsizev"),
+      elLidarPS=bind("lidarPsize","lidarPsizev"),
       elMax=bind("maxd","maxdv",v=>v.toFixed(1)+"m"),
       elMin=bind("mind","mindv",v=>v.toFixed(2)+"m");
 
@@ -358,16 +584,22 @@ document.querySelectorAll('#nav button').forEach(b=>{
   b.onclick=()=>{
     document.querySelectorAll('#nav button').forEach(x=>x.classList.toggle('on',x===b));
     document.querySelectorAll('.page').forEach(p=>p.classList.toggle('on',p.id==='page-'+b.dataset.p));
+    if(b.dataset.p==='calib'||b.dataset.p==='todo') loadCalib();
   };
 });
 
 function renderCalib(c){
   if(!c) return;
   const esc=t=>String(t).replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));
-  $("calibList").innerHTML = c.stages.map(s=>`
+  const counts=c.counts||{done:(c.stages||[]).length,pending:(c.pending||[]).length,rework:0,
+    total:(c.stages||[]).length+(c.pending||[]).length};
+  $("calibSub").textContent=`${counts.done} 项标定结果已载入；当前 rig 外参已投入融合查看器。`;
+  $("todoSub").textContent='按实测影响与 rig 需求组织的标定项目。';
+  const stageCards=(c.stages||[]).map(s=>`
     <div class="card">
       <h3>${esc(s.name)}
-        <span class="st ${s.status}">${s.status==='done'?'已完成':'待做'}</span>
+        <span class="st ${s.quality==='local'?'local':'done'}">${s.quality==='local'?'当前 RIG · 可用':'已完成'}</span>
+        <span style="color:var(--accent);font-size:10.5px;font-weight:400">${esc(s.device||'')}</span>
         <span style="color:var(--dim);font-size:11px;font-weight:400">${esc(s.stage)}</span></h3>
       <div class="src">${esc(s.source)}</div>
       ${s.slam?`<div class="slam">
@@ -378,15 +610,17 @@ function renderCalib(c){
         <div class="sn">${esc(s.slam.online_note)}</div>
         <div class="sn">${esc(s.slam.impact_note)}</div>
       </div>`:''}
-      ${s.rows.length?`<table>${s.rows.map(r=>
+      ${(s.rows||[]).length?`<table>${s.rows.map(r=>
         `<tr><td>${esc(r[0])}</td><td>${esc(r[1])}</td></tr>`).join('')}</table>`:''}
-      ${s.checks.map(k=>`<div class="chk ${k[2]}"><i>${
+      ${(s.checks||[]).map(k=>`<div class="chk ${k[2]}"><i>${
         k[2]==='ok'?'✓':k[2]==='warn'?'!':'✗'}</i><b>${esc(k[0])} — <em>${esc(k[1])}</em></b></div>`).join('')}
       <div class="note">${esc(s.note)}</div>
     </div>`).join('');
-  $("todoList").innerHTML = c.pending.map(t=>`
+  $("calibList").innerHTML=stageCards||'<div class="card"><div class="note">尚无可用标定结果。</div></div>';
+  const todoCards=(c.pending||[]).map(t=>`
     <div class="card">
-      <h3>${esc(t.name)}<span class="st pending">待做</span>
+      <h3>${esc(t.name)}<span class="st ${t.lifecycle==='rework'?'rework':'pending'}">${t.lifecycle==='rework'?'待更新':'规划中'}</span>
+        <span style="color:var(--accent);font-size:10.5px;font-weight:400">${esc(t.device||'')}</span>
         <span style="color:var(--dim);font-size:11px;font-weight:400">${esc(t.cost)}</span></h3>
       ${t.slam?`<div class="slam">
         <span class="pill on-${t.slam.online}">${
@@ -399,8 +633,14 @@ function renderCalib(c){
       <table>
         <tr><td>为什么要做</td><td>${esc(t.why)}</td></tr>
         <tr><td>怎么做</td><td>${esc(t.how)}</td></tr>
+        <tr><td>完成产物</td><td>${esc(t.output||'—')}</td></tr>
+        ${t.completion?`<tr><td>完成条件</td><td>${esc(t.completion)}</td></tr>`:''}
+        <tr><td>项目状态</td><td>${esc(t.progress||'已纳入后续规划')}</td></tr>
       </table>
+      ${(t.checks||[]).map(k=>`<div class="chk ${k[2]}"><i>${
+        k[2]==='ok'?'✓':k[2]==='warn'?'!':'✗'}</i><b>${esc(k[0])} — <em>${esc(k[1])}</em></b></div>`).join('')}
     </div>`).join('');
+  $("todoList").innerHTML=todoCards||'<div class="card"><div class="note">标定项目均已完成。</div></div>';
 }
 
 /* ---------- 温度曲线 ---------- */
@@ -424,31 +664,131 @@ function drawTemp(){
 }
 
 /* ---------- WebSocket ---------- */
-let ws=null;
-$("wsurl").value = `ws://${location.hostname||"localhost"}:9002`;
-function setStatus(on,txt){$("status").classList.toggle("on",on);$("srcline").textContent=txt;}
-function connect(){
-  if(ws){try{ws.close()}catch(e){} ws=null;}
-  const url=$("wsurl").value;
-  setStatus(false,"连接中…");
-  ws=new WebSocket(url); ws.binaryType="arraybuffer";
-  ws.onopen=()=>{setStatus(true,"已连接");$("btn").textContent="断开";};
-  ws.onclose=()=>{setStatus(false,"已断开");$("btn").textContent="连接";ws=null;};
-  ws.onerror=()=>setStatus(false,"连接失败 —— server.py 起来了吗?");
-  ws.onmessage=ev=>{
-    const buf=ev.data, dv=new DataView(buf), type=dv.getUint8(0);
+let ws=null,reconnectTimer=null,reconnectAttempt=0;
+let manualDisconnect=false,pageClosing=false;
+const wsPort=queryParams.get("ws")||"9002";
+$("wsurl").value = `ws://${location.hostname||"localhost"}:${wsPort}`;
+function reportParent(payload){
+  if(!EMBED||window.parent===window)return;
+  window.parent.postMessage(Object.assign({channel:'pointcloud-viewer',role:ROLE},payload),location.origin);
+}
+function setStatus(on,txt){
+  $("status").classList.toggle("on",on);$("srcline").textContent=txt;
+  reportParent({event:'status',online:on,text:txt});
+}
+function scheduleReconnect(){
+  if(manualDisconnect||pageClosing||STATIC||DUAL||reconnectTimer)return;
+  const delay=Math.min(5000,500*2**Math.min(reconnectAttempt++,4));
+  setStatus(false,`已断开，${(delay/1000).toFixed(1)} s 后重连…`);
+  $("btn").textContent="立即重连";
+  reconnectTimer=setTimeout(()=>{reconnectTimer=null;connect();},delay);
+}
+function rejectOverlay(message){
+  $("err").style.display="flex";
+  $("err").textContent="几何叠加已拒绝\n"+message;
+  setStatus(false,message);
+  throw new Error(message);
+}
+function sameCameraGeometry(a,b){
+  if(!a||!b)return false;
+  if(a.width!==b.width||a.height!==b.height||a.frame_id!==b.frame_id)return false;
+  return ['fx','fy','cx','cy'].every(k=>Number.isFinite(+a[k])&&Math.abs(+a[k]-+b[k])<=1e-5);
+}
+function handleOverlayMeta(meta,streamRole){
+  const ext=meta.extrinsic_preview;
+  if(!ext||!ext.available||!S.extrinsic||ext.sha256!==S.extrinsic.sha256||
+      ext.status!==S.extrinsic.status)
+    rejectOverlay(`${streamRole} 后端与页面外参不一致`);
+  if(streamRole==='rgbd'){
+    const d=meta.depth,c=meta.color;
+    if(meta.kind!=='depth_image'||meta.source!=='d435i'||!meta.aligned)
+      rejectOverlay('RGB-D 后端未提供对齐到彩色相机的深度');
+    if(meta.serial!==S.extrinsic.camera_serial)
+      rejectOverlay(`RGB-D 在线 serial ${meta.serial||'不可用'} 与外参 ${S.extrinsic.camera_serial} 不一致`);
+    if(!sameCameraGeometry(d,c)||d.frame_id!=='camera_color_optical_frame'||
+        meta.point_frame_id!=='camera_color_optical_frame'||d.units!=='metres')
+      rejectOverlay('RGB-D 深度的分辨率/内参/frame/单位与彩色几何不一致');
+    S.rgbdMeta=meta;S.meta=meta;S.kind='overlay';S.scale=meta.depth_scale;
+    renderCalib(meta.calib);
+    $("intr").innerHTML=
+      `<i>公共 frame</i><b>camera_color_optical_frame</b>`+
+      `<i>rig / 单位</i><b>${escHtml(S.extrinsic.rig_id)} / m</b>`+
+      `<i>RGB-D</i><b>D435i · ${d.width}×${d.height}</b>`+
+      `<i>LiDAR</i><b>MID-360S</b>`+
+      `<i>fx / fy</i><b>${d.fx.toFixed(2)} / ${d.fy.toFixed(2)}</b>`+
+      `<i>cx / cy</i><b>${d.cx.toFixed(2)} / ${d.cy.toFixed(2)}</b>`;
+  }else if(streamRole==='lidar'){
+    if(meta.kind!=='point_stream'||meta.topic!=='/livox/lidar'||
+        meta.input_frame_id!=='livox_frame'||
+        meta.frame_id!=='camera_color_optical_frame'||meta.units!=='metres'||
+        meta.transform_equation!=='p_camera = T_camera_lidar * p_lidar'||
+        meta.serial!==S.extrinsic.lidar_serial)
+      rejectOverlay('LiDAR 后端未严格按 p_camera=T_camera_lidar*p_livox 输出米制彩色相机坐标');
+    S.lidarMeta=meta;
+  }else{
+    rejectOverlay(`未知叠加源: ${streamRole}`);
+  }
+  if(S.rgbdMeta&&S.lidarMeta){
+    setStatus(true,'RGB-D + LiDAR 实时融合');
+    reportParent({event:'overlay-meta',online:true,status:S.extrinsic.status,
+      sha256:S.extrinsic.sha256,frame:'camera_color_optical_frame',units:'metres'});
+  }
+}
+function handlePacket(buf,streamRole='single'){
+    const dv=new DataView(buf), type=dv.getUint8(0);
     if(type===T_META){
-      S.meta=JSON.parse(new TextDecoder().decode(new Uint8Array(buf,1)));
-      const d=S.meta.depth;
-      S.scale=S.meta.depth_scale;
+      const incoming=JSON.parse(new TextDecoder().decode(new Uint8Array(buf,1)));
+      if(OVERLAY){handleOverlayMeta(incoming,streamRole);return;}
+      S.meta=incoming;
+      S.kind=S.meta.kind||"depth_image";
+      reportParent({event:'meta',online:true,kind:S.kind,source:S.meta.source||'',
+        frame:S.meta.frame_id||(S.meta.depth&&S.meta.depth.frame_id)||'',topic:S.meta.topic||''});
+      S.hasD=false;S.hasC=false;S.hasP=false;S.hasPI=false;S.hasPRGB=false;
+      S.nativeCount=0;S.fpsP=0;S.lastP=0;
       renderCalib(S.meta.calib);
-      setStatus(true,`${S.meta.source} · ${d.width}×${d.height}`+(S.meta.usb?` · USB${S.meta.usb}`:""));
-      $("intr").innerHTML=
-        `<i>fx</i><b>${d.fx.toFixed(2)}</b><i>fy</i><b>${d.fy.toFixed(2)}</b>`+
-        `<i>cx</i><b>${d.cx.toFixed(2)}</b><i>cy</i><b>${d.cy.toFixed(2)}</b>`+
-        `<i>单位</i><b>${(S.scale*1000).toFixed(3)}mm</b>`+
-        (S.meta.color_source==='our_calibration'?`<i>彩色</i><b style="color:var(--ok)">自标定</b>`:"");
+      const hasCalib=!!S.meta.calib;
+      document.querySelectorAll('#nav button[data-p="calib"],#nav button[data-p="todo"]')
+        .forEach(b=>b.style.display=hasCalib?"":"none");
+      if(!hasCalib&&!$("page-live").classList.contains("on"))
+        document.querySelector('#nav button[data-p="live"]').click();
+      const native=S.kind==="point_stream";
+      $("page-live").classList.toggle("point-stream",native);
+      $("thermal").style.display=native?"none":"block";
+      $("metaTitle").textContent=native?"数据源":"相机内参";
+      if(native){
+        const m=S.meta,topic=m.topic||"(unknown)",frame=m.frame_id||"(empty)";
+        setStatus(true,`${m.source} · ${topic} · ${frame}`);
+        $("intr").innerHTML=
+          `<i>话题</i><b title="${escHtml(topic)}">${escHtml(topic)}</b>`+
+          `<i>类型</i><b title="${escHtml(m.message_type||'')}">${escHtml(m.message_type||'—')}</b>`+
+          `<i>frame</i><b>${escHtml(frame)}</b>`+
+          `<i>字段</i><b title="${escHtml((m.fields||[]).join(', '))}">${escHtml((m.fields||[]).join(', '))}</b>`+
+          `<i>坐标</i><b>${escHtml(m.axes_input||'—')} → viewer</b>`+
+          `<i>QoS</i><b title="${escHtml(m.qos||'')}">${escHtml(m.qos||'—')}</b>`;
+        elMax.max=200;elMax.step=.5;elMax.value=m.recommended_max_range||30;
+        elMin.max=10;elMin.value=.3;
+        S.viewCenter=Array.isArray(m.view_center)?m.view_center:[0,0,-5];
+        S.viewDistance=+m.view_distance||12;
+        $("shade").value=m.has_color?"color":(m.has_intensity?"intensity":"depth");
+      }else{
+        const d=S.meta.depth;
+        S.scale=S.meta.depth_scale;
+        setStatus(true,`${S.meta.source} · ${d.width}×${d.height}`+(S.meta.usb?` · USB${S.meta.usb}`:""));
+        $("intr").innerHTML=
+          `<i>fx</i><b>${d.fx.toFixed(2)}</b><i>fy</i><b>${d.fy.toFixed(2)}</b>`+
+          `<i>cx</i><b>${d.cx.toFixed(2)}</b><i>cy</i><b>${d.cy.toFixed(2)}</b>`+
+          `<i>单位</i><b>${(S.scale*1000).toFixed(3)}mm</b>`+
+          (S.meta.color_source==='our_calibration'?`<i>彩色</i><b style="color:var(--ok)">自标定</b>`:"");
+        elMax.max=10;elMax.step=.1;elMax.value=4;
+        elMin.max=1.5;elMin.value=.15;
+        S.viewCenter=[0,0,-1.2];S.viewDistance=3.2;
+        $("shade").value="depth";
+      }
+      elMax.dispatchEvent(new Event("input"));
+      elMin.dispatchEvent(new Event("input"));
+      resetView();
     } else if(type===T_DEPTH){
+      if(OVERLAY&&streamRole!=='rgbd')rejectOverlay('非 RGB-D 后端发来了深度帧');
       // 头 24 字节: type(1) pad(3) w(2) h(2) seq(4) t(8) scale(4)
       const w=dv.getUint16(4),h=dv.getUint16(6),sc=dv.getFloat32(20);
       const u16=new Uint16Array(buf,24,w*h);
@@ -459,6 +799,7 @@ function connect(){
       drawDepth(u16,w,h,sc);
       const t=performance.now(); if(S.lastD)S.fpsD=0.8*S.fpsD+0.2*(1000/(t-S.lastD)); S.lastD=t;
     } else if(type===T_COLOR){
+      if(OVERLAY&&streamRole!=='rgbd')rejectOverlay('非 RGB-D 后端发来了彩色帧');
       // 头 20 字节: type(1) pad(3) w(2) h(2) seq(4) t(8)
       const blob=new Blob([new Uint8Array(buf,20)],{type:"image/jpeg"});
       createImageBitmap(blob).then(bm=>{
@@ -472,6 +813,7 @@ function connect(){
       if(old&&old.startsWith("blob:"))URL.revokeObjectURL(old);
       const t=performance.now(); if(S.lastC)S.fpsC=0.8*S.fpsC+0.2*(1000/(t-S.lastC)); S.lastC=t;
     } else if(type===T_IR){
+      if(OVERLAY&&streamRole!=='rgbd')rejectOverlay('非 RGB-D 后端发来了红外帧');
       // IR 原图:唯一能看到散斑的视图。发射器开着时满屏白点即是散斑,
       // 它们锚定在相机上而非世界上 —— 这正是不能拿 IR 做特征跟踪的原因。
       // 头 20 字节: type(1) laser_on(1) pad(2) w(2) h(2) seq(4) t(8)
@@ -485,11 +827,58 @@ function connect(){
       else     { if(S.lastIC)S.fpsIC=0.8*S.fpsIC+0.2*(1000/(t-S.lastIC)); S.lastIC=t;
                  S.sawClean=true; }
       if(!S.sawClean) $("irclbl").textContent="红外 · 干净帧(需开交替模式)";
+    } else if(type===T_POINTS){
+      if(OVERLAY&&streamRole!=='lidar')rejectOverlay('非 LiDAR 后端发来了点云帧');
+      // 20-byte header: type, flags(bit0 intensity, bit1 rgb), count, seq, t.
+      if(buf.byteLength<20){
+        setStatus(false,"点云包头不完整");return;
+      }
+      const flags=dv.getUint8(1),n=dv.getUint32(4);
+      if((flags&~3)!==0||n>2000000){
+        setStatus(false,`点云包参数非法 flags=${flags} count=${n}`);return;
+      }
+      const xyzBytes=n*12,intBytes=(flags&1)?n*4:0,rgbBytes=(flags&2)?n*3:0;
+      const expected=20+xyzBytes+intBytes+rgbBytes;
+      if(buf.byteLength<expected){
+        setStatus(false,`点云包截断 ${buf.byteLength}/${expected} B`);return;
+      }
+      const xyz=new Float32Array(buf,20,n*3);
+      gl.bindVertexArray(nVao);
+      gl.bindBuffer(gl.ARRAY_BUFFER,nPos);
+      gl.bufferData(gl.ARRAY_BUFFER,xyz,gl.DYNAMIC_DRAW);
+      if(flags&1){
+        const intensity=new Float32Array(buf,20+xyzBytes,n);
+        gl.bindBuffer(gl.ARRAY_BUFFER,nInt);
+        gl.bufferData(gl.ARRAY_BUFFER,intensity,gl.DYNAMIC_DRAW);
+        gl.enableVertexAttribArray(AN.i);
+      }else{
+        gl.disableVertexAttribArray(AN.i);gl.vertexAttrib1f(AN.i,.5);
+      }
+      if(flags&2){
+        const rgb=new Uint8Array(buf,20+xyzBytes+intBytes,n*3);
+        gl.bindBuffer(gl.ARRAY_BUFFER,nRgb);
+        gl.bufferData(gl.ARRAY_BUFFER,rgb,gl.DYNAMIC_DRAW);
+        gl.enableVertexAttribArray(AN.rgb);
+      }else{
+        gl.disableVertexAttribArray(AN.rgb);gl.vertexAttrib3f(AN.rgb,.72,.78,.86);
+      }
+      gl.bindVertexArray(null);
+      S.hasP=true;S.hasPI=!!(flags&1);S.hasPRGB=!!(flags&2);
+      S.nativeCount=n;S.pts=n;S.valid=n?1:0;
+      const t=performance.now();
+      if(S.lastP)S.fpsP=.8*S.fpsP+.2*(1000/(t-S.lastP));S.lastP=t;
     } else if(type===T_STATS){
       const st=JSON.parse(new TextDecoder().decode(new Uint8Array(buf,1)));
       const streams=st.streams||{};
-      $("rt").innerHTML=Object.entries(streams)
-        .map(([k,v])=>`<i>${k}</i><b>${v.fps.toFixed(1)} fps</b>`).join("");
+      if(OVERLAY){
+        S.overlayStats[streamRole]=st;
+        $("rt").innerHTML=Object.entries(S.overlayStats).flatMap(([role,item])=>
+          Object.entries(item.streams||{}).map(([k,v])=>
+            `<i>${escHtml(role)} · ${escHtml(k)}</i><b>${v.fps.toFixed(1)} fps</b>`)).join("");
+      }else{
+        $("rt").innerHTML=Object.entries(streams)
+          .map(([k,v])=>`<i>${k}</i><b>${v.fps.toFixed(1)} fps</b>`).join("");
+      }
       S.hasModel=!!st.has_thermal_model;
       const tp=st.temps;
       if(tp){
@@ -520,29 +909,187 @@ function connect(){
         $("tcomp").disabled=false;
       }
     }
+  }
+function connect(){
+  if(reconnectTimer){clearTimeout(reconnectTimer);reconnectTimer=null;}
+  const url=$("wsurl").value;
+  setStatus(false,"连接中…");
+  const socket=new WebSocket(url);ws=socket;socket.binaryType="arraybuffer";
+  socket.onopen=()=>{
+    if(ws!==socket)return;
+    reconnectAttempt=0;setStatus(true,"已连接");$("btn").textContent="断开";
+  };
+  socket.onclose=()=>{
+    if(ws!==socket)return;
+    ws=null;$("btn").textContent="连接";
+    if(manualDisconnect||pageClosing)setStatus(false,"已断开");
+    else scheduleReconnect();
+  };
+  socket.onerror=()=>{
+    if(ws===socket)setStatus(false,"连接失败 —— 等待后端…");
+  };
+  socket.onmessage=ev=>{
+    if(ws===socket)handlePacket(ev.data,'single');
   };
 }
-$("btn").onclick=()=>{ if(ws)ws.close(); else connect(); };
-const STATIC = new URLSearchParams(location.search).has('static');
-if(STATIC){
+$("btn").onclick=()=>{
+  if(ws){
+    manualDisconnect=true;
+    ws.close();
+  }else{
+    if(reconnectTimer){clearTimeout(reconnectTimer);reconnectTimer=null;}
+    manualDisconnect=false;reconnectAttempt=0;connect();
+  }
+};
+const overlaySockets={},overlayReconnect={};
+function connectOverlaySource(role,port){
+  if(pageClosing)return;
+  const socket=new WebSocket(`ws://${location.hostname||'localhost'}:${port}`);
+  overlaySockets[role]=socket;socket.binaryType='arraybuffer';
+  socket.onopen=()=>{
+    if(overlaySockets[role]!==socket)return;
+    S.overlayOnline[role]=true;
+    setStatus(!!(S.overlayOnline.rgbd&&S.overlayOnline.lidar),
+      S.overlayOnline.rgbd&&S.overlayOnline.lidar?'两路已连接，校验坐标元数据…':`${role} 已连接，等待另一路…`);
+  };
+  socket.onmessage=ev=>{
+    if(overlaySockets[role]===socket)handlePacket(ev.data,role);
+  };
+  socket.onerror=()=>{
+    if(overlaySockets[role]===socket)setStatus(false,`${role} 连接失败`);
+  };
+  socket.onclose=()=>{
+    if(overlaySockets[role]!==socket)return;
+    delete overlaySockets[role];S.overlayOnline[role]=false;
+    setStatus(false,`${role} 已断开，等待后端…`);
+    if(!pageClosing)overlayReconnect[role]=setTimeout(
+      ()=>connectOverlaySource(role,port),1000);
+  };
+}
+async function setupOverlay(){
+  $("wsurl").closest('.grp').style.display='none';
+  $("metaTitle").textContent='叠加坐标';
+  ['globalPointSize','globalShade','globalStride'].forEach(id=>$(id).style.display='none');
+  elMax.max=60;elMax.step=.5;elMax.value=20;
+  elMin.max=3;elMin.value=.15;
+  elMax.dispatchEvent(new Event('input'));elMin.dispatchEvent(new Event('input'));
+  S.viewCenter=[0,0,-4];S.viewDistance=10;resetView();
+  try{
+    const response=await fetch('/extrinsic.json?ts='+Date.now(),{cache:'no-store'});
+    const ext=await response.json();
+    if(!response.ok||!ext.available)throw new Error(ext.reason||`HTTP ${response.status}`);
+    if(ext.equation!=='p_camera = T_camera_lidar * p_lidar'||
+        ext.from_frame!=='livox_frame'||ext.to_frame!=='camera_color_optical_frame'||
+        ext.units!=='metres'||!['validated','operational','draft'].includes(ext.status)||
+        !ext.rig_id||!ext.mount_session_id||!ext.camera_serial||!ext.lidar_serial)
+      throw new Error('外参预览元数据方向/单位/状态非法');
+    S.extrinsic=ext;
+    const badge=$("overlayBadge");
+    badge.className=ext.status;
+    badge.textContent=ext.status==='draft'
+      ?'DRAFT · 未标定 · 几何叠加预览'
+      :ext.status==='operational'
+        ?'当前 RIG 外参已载入 · 雷视融合'
+        :'VALIDATED · 雷视融合';
+    $("draftWatermark").classList.toggle('on',ext.status==='draft');
+    setStatus(false,'外参方向已核对，连接两路后端…');
+    connectOverlaySource('rgbd',queryParams.get('rgbd_ws')||'9002');
+    connectOverlaySource('lidar',queryParams.get('lidar_ws')||'9003');
+  }catch(error){
+    rejectOverlay(error.message||String(error));
+  }
+}
+addEventListener('pagehide',()=>{
+  pageClosing=true;manualDisconnect=true;
+  if(reconnectTimer)clearTimeout(reconnectTimer);
+  if(ws)ws.close();
+  Object.values(overlayReconnect).forEach(clearTimeout);
+  Object.values(overlaySockets).forEach(socket=>socket.close());
+});
+const STATIC = queryParams.has('static');
+async function loadCalib(){
+  try{
+    const r=await fetch('/calib.json?ts='+Date.now(),{cache:'no-store'});
+    if(!r.ok)throw new Error(`HTTP ${r.status}`);
+    renderCalib(await r.json());
+  }catch(e){
+    if(!DUAL&&!STATIC)setStatus(false,'读取 /calib.json 失败');
+  }
+}
+async function setupDual(){
+  const rgbdPort=queryParams.get('rgbd_ws')||'9002';
+  const lidarPort=queryParams.get('lidar_ws')||'9003';
+  loadCalib();
+  setInterval(loadCalib,5000);
+  let ext=null;
+  try{
+    const response=await fetch('/extrinsic.json?ts='+Date.now(),{cache:'no-store'});
+    ext=await response.json();
+  }catch(error){
+    ext={available:false,reason:`读取外参状态失败: ${error.message||error}`};
+  }
+  if(ext&&ext.available){
+    document.documentElement.classList.add('overlay-active');
+    const draft=ext.status==='draft';
+    const local=ext.status==='operational';
+    $("dualModeNote").classList.add(draft?'draft':local?'operational':'validated');
+    $("dualModeTitle").textContent=draft
+      ?'DRAFT · 未标定 · 雷视几何叠加预览'
+      :local
+        ?'当前 RIG 外参已载入 · 雷视融合'
+        :'VALIDATED · 雷视融合';
+    $("dualModeDetail").textContent=(draft
+      ?`显式选定的 draft: ${ext.path}。仅供查错，不得视为已标定或已验收。`
+      :local
+        ?`已载入当前 rig 外参 ${ext.path}；其他 rig 通过 --extrinsic 载入各自结果。`
+        :`已载入 ${ext.path}。`)+
+      '两路点流按当前 rig 外参统一到 camera_color_optical_frame。';
+    $("overlayPanelTitle").textContent=draft?'⚠ DRAFT 几何叠加预览':'雷视融合点云';
+    $("overlayPanelMeta").textContent=`${ext.rig_id} · mount ${ext.mount_session_id} · D435i ${ext.camera_serial} · MID ${ext.lidar_serial} · ${ext.sha256.slice(0,12)}`;
+    $("overlayFrame").src=`/viewer.html?embed=1&overlay=1&role=overlay&rgbd_ws=${encodeURIComponent(rgbdPort)}&lidar_ws=${encodeURIComponent(lidarPort)}`;
+    addEventListener('message',ev=>{
+      if(ev.origin!==location.origin||ev.source!==$("overlayFrame").contentWindow||
+          !ev.data||ev.data.channel!=='pointcloud-viewer'||ev.data.role!=='overlay')return;
+      if(ev.data.event==='overlay-meta'){
+        $("overlayPanelState").textContent=draft?'DRAFT 预览':local?'当前 RIG · 实时融合':'实时融合';
+        $("overlayPanelState").classList.toggle('on',!draft);
+      }else if(ev.data.event==='status'){
+        $("overlayPanelState").textContent=ev.data.online?'实时叠加':(ev.data.text||'离线');
+        if(!ev.data.online)$("overlayPanelState").classList.remove('on');
+      }
+    });
+    return;
+  }
+  $("dualModeTitle").textContent='雷视融合未启动';
+  $("dualModeDetail").textContent=(ext&&ext.reason?ext.reason+'。':'')+
+    '未提供可用外参，因此不创建任何假配准或独立点云窗口。';
+  $("overlayPanelTitle").textContent='雷视融合未启动';
+  $("overlayPanelMeta").textContent=ext&&ext.reason?ext.reason:'缺少外参';
+  $("overlayPanelState").textContent='无外参';
+}
+if(DUAL){
+  setupDual();
+}else if(OVERLAY){
+  setupOverlay();
+}else if(STATIC){
   // 静态模式:只渲染标定页,便于截图核对排版(WebGL 循环会让页面永不 load 完成)
-  fetch('/calib.json').then(r=>r.json()).then(c=>{
-    renderCalib(c);
+  loadCalib().then(()=>{
     const want = (location.hash || '#calib').slice(1);
     const btn = document.querySelector(`#nav button[data-p="${want}"]`)
              || document.querySelector('#nav button[data-p="calib"]');
     btn.click();
     setStatus(false,'静态模式(无实时流)');
-  }).catch(e=>setStatus(false,'读取 /calib.json 失败'));
+  });
 }else{
   connect();
 }
 
 /* ---------- 渲染循环 ---------- */
 function frame(){
-  if(STATIC) return;          // 静态模式不跑渲染循环
+  if(STATIC||DUAL) return;    // 外层工作台和静态模式不占 GPU
   requestAnimationFrame(frame);
   if(!gl)return;
+  if(AUTOROTATE)S.yaw=(S.yaw+0.0025)%(Math.PI*2);
   const dpr=Math.min(devicePixelRatio||1,2);
   const w=Math.floor(cv.clientWidth*dpr),h=Math.floor(cv.clientHeight*dpr);
   if(cv.width!==w||cv.height!==h){cv.width=w;cv.height=h;}
@@ -554,16 +1101,16 @@ function frame(){
   const cx=Math.cos(S.pitch)*Math.sin(S.yaw)*S.dist,
         cy=Math.sin(S.pitch)*S.dist,
         cz=Math.cos(S.pitch)*Math.cos(S.yaw)*S.dist;
-  const tgt=[S.tx,S.ty,-1.2];
+  const tgt=[S.tx,S.ty,S.targetZ];
   const V=lookAt([tgt[0]+cx,tgt[1]+cy,tgt[2]+cz],tgt,[0,1,0]);
-  const MVP=mul(persp(50*Math.PI/180,w/h,0.05,100),V);
+  const MVP=mul(persp(50*Math.PI/180,w/h,0.05,500),V);
 
   if($("axes").checked&&axN){
     gl.useProgram(P2);gl.uniformMatrix4fv(U.aMVP,false,MVP);
     gl.bindVertexArray(axVao);gl.drawArrays(gl.LINES,0,axN);gl.bindVertexArray(null);
   }
-  if(S.hasD){
-    const stride=+$("stride").value;
+  if(S.hasD&&(!OVERLAY||$("showRgbd").checked)){
+    const stride=OVERLAY?+$("rgbdStride").value:+$("stride").value;
     const cols=Math.floor(S.dw/stride),rows=Math.floor(S.dh/stride);
     S.pts=cols*rows;
     gl.useProgram(P1);
@@ -574,23 +1121,70 @@ function frame(){
     gl.uniform2f(U.uSize,S.dw,S.dh);
     gl.uniform1f(U.uScale,S.scale);
     gl.uniformMatrix4fv(U.uMVP,false,MVP);
-    gl.uniform1f(U.uPS,+elPS.value*dpr);
+    gl.uniform1f(U.uPS,+(OVERLAY?elRgbdPS:elPS).value*dpr);
     gl.uniform1f(U.uMin,+elMin.value);
     gl.uniform1f(U.uMax,+elMax.value);
     gl.uniform1i(U.uStride,stride);
-    gl.uniform1i(U.uShade,{depth:0,color:1,height:2,flat:3}[$("shade").value]);
+    gl.uniform1i(U.uPalette,OVERLAY?1:0);
+    const shade=OVERLAY
+      ?{depth:0,color:1,height:2,source:3}[$("rgbdShade").value]
+      :{depth:0,color:1,height:2,flat:3,intensity:0}[$("shade").value];
+    gl.uniform1i(U.uShade,shade);
+    gl.uniform3f(U.uFlatColor,OVERLAY?.18:.72,OVERLAY?.82:.78,OVERLAY?.90:.86);
     const on=$("tcomp").checked && S.corr;
     gl.uniform1f(U.uDScale, on ? 1.0+(S.corr.depth_ppm||0)*1e-6 : 1.0);
     gl.uniform2f(U.uDPP, on?(S.corr.dcx_px||0):0, on?(S.corr.dcy_px||0):0);
     gl.drawArrays(gl.POINTS,0,S.pts);
   }
-  $("hud").innerHTML =
-    `深度 <b>${S.fpsD.toFixed(1)}</b> fps<br>`+
-    `彩色 <b>${S.fpsC.toFixed(1)}</b> fps<br>`+
-    `红外散斑 <b>${S.fpsI.toFixed(1)}</b> fps<br>`+
-    `红外干净 <b>${S.fpsIC.toFixed(1)}</b> fps<br>`+
-    `点数 <b>${S.pts.toLocaleString()}</b><br>`+
-    `有效 <b>${(S.valid*100).toFixed(1)}%</b>`;
+  if(S.hasP&&(!OVERLAY||$("showLidar").checked)){
+    const stride=OVERLAY?+$("lidarStride").value:+$("stride").value;
+    gl.useProgram(P3);
+    gl.uniformMatrix4fv(UN.uMVP,false,MVP);
+    gl.uniform1f(UN.uPS,+(OVERLAY?elLidarPS:elPS).value*dpr);
+    gl.uniform1f(UN.uMin,+elMin.value);
+    gl.uniform1f(UN.uMax,+elMax.value);
+    gl.uniform1i(UN.uPalette,OVERLAY?2:0);
+    const shade=OVERLAY
+      ?{depth:0,height:2,source:3,intensity:4}[$("lidarShade").value]
+      :{depth:0,color:1,height:2,flat:3,intensity:4}[$("shade").value];
+    gl.uniform1i(UN.uShade,shade);
+    gl.uniform3f(UN.uFlatColor,OVERLAY?1:.72,OVERLAY?.50:.78,OVERLAY?.16:.86);
+    gl.uniform1i(UN.uHasI,S.hasPI?1:0);
+    gl.uniform1i(UN.uHasRGB,S.hasPRGB?1:0);
+    gl.uniform1i(UN.uStride,stride);
+    gl.bindVertexArray(nVao);
+    gl.drawArrays(gl.POINTS,0,S.nativeCount);
+    gl.bindVertexArray(null);
+  }
+  if(OVERLAY){
+    const label=S.extrinsic&&S.extrinsic.status==='draft'?'DRAFT':
+      S.extrinsic&&S.extrinsic.status==='operational'?'当前 RIG':'VALIDATED';
+    const rgbdStride=+$("rgbdStride").value,lidarStride=+$("lidarStride").value;
+    const rgbdShown=S.dw?Math.floor(S.dw/rgbdStride)*Math.floor(S.dh/rgbdStride):0;
+    const lidarShown=Math.ceil(S.nativeCount/lidarStride);
+    $("hud").innerHTML=
+      `RGB-D <b>${S.fpsD.toFixed(1)}</b> fps · 显示 <b>${rgbdShown.toLocaleString()}</b> / ${S.dw?S.dw*S.dh:0}<br>`+
+      `LiDAR <b>${S.fpsP.toFixed(1)}</b> fps · 显示 <b>${lidarShown.toLocaleString()}</b> / ${S.nativeCount.toLocaleString()}<br>`+
+      `frame <b>camera_color_optical_frame</b> · 单位 <b>m</b><br>`+
+      `<span style="color:${label==='DRAFT'?'var(--err)':label==='当前 RIG'?'var(--accent)':'var(--ok)'}">${label} · 雷视融合</span><br>`+
+      `<span style="color:var(--dim)">双源实时点流 · 当前 rig 外参</span>`;
+  }else if(S.kind==="point_stream"){
+    const m=S.meta||{};
+    $("hud").innerHTML=
+      `点云 <b>${S.fpsP.toFixed(1)}</b> fps<br>`+
+      `点数 <b>${S.nativeCount.toLocaleString()}</b><br>`+
+      `强度 <b>${S.hasPI?"有":"无"}</b> · RGB <b>${S.hasPRGB?"有":"无"}</b><br>`+
+      `frame <b>${escHtml(m.frame_id||"—")}</b><br>`+
+      `<span style="color:var(--dim)">单帧显示 · 无 TF 累积</span>`;
+  }else{
+    $("hud").innerHTML =
+      `深度 <b>${S.fpsD.toFixed(1)}</b> fps<br>`+
+      `彩色 <b>${S.fpsC.toFixed(1)}</b> fps<br>`+
+      `红外散斑 <b>${S.fpsI.toFixed(1)}</b> fps<br>`+
+      `红外干净 <b>${S.fpsIC.toFixed(1)}</b> fps<br>`+
+      `点数 <b>${S.pts.toLocaleString()}</b><br>`+
+      `有效 <b>${(S.valid*100).toFixed(1)}%</b>`;
+  }
 }
 frame();
 </script>

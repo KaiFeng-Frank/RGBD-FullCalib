@@ -3,11 +3,15 @@ data/*.bag
 data/*.npz
 data/*-report-*.pdf
 data/*_frames/
+data/**/*.bag
+data/**/*.db3
+data/**/*.mcap
 logs/
 # 上游 Kalibr 源码(用 Docker 构建,见 kalibr.sh)
 kalibr/
 # 运行时产物
 __pycache__/
 *.pyc
+.venv_ros/
 ffprof_tmp/
 results/attempt1_stereo_undercovered/

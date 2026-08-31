@@ -32,29 +32,75 @@ def _pick(dev, stream, fmt, idx=0, prefer=((848, 480), (640, 480), (1280, 720)),
     return max(ok, key=lambda c: (c[0] * c[1], c[2]))
 
 
+def _video_meta(intrinsics, fps, frame_id):
+    return dict(width=int(intrinsics.width), height=int(intrinsics.height),
+                fps=int(fps), fx=float(intrinsics.fx), fy=float(intrinsics.fy),
+                cx=float(intrinsics.ppx), cy=float(intrinsics.ppy),
+                coeffs=list(intrinsics.coeffs), model=str(intrinsics.model),
+                frame_id=frame_id, units='metres')
+
+
+def _check_aligned_meta(depth, color):
+    """Reject metadata that would back-project an aligned image with another K."""
+    exact = ('width', 'height', 'frame_id')
+    for key in exact:
+        if depth.get(key) != color.get(key):
+            raise RuntimeError(
+                f'aligned depth/color metadata mismatch: {key} '
+                f'{depth.get(key)!r} != {color.get(key)!r}')
+    for key in ('fx', 'fy', 'cx', 'cy'):
+        if not np.isclose(depth.get(key), color.get(key), rtol=0, atol=1e-5):
+            raise RuntimeError(
+                f'aligned depth/color intrinsics mismatch: {key} '
+                f'{depth.get(key)!r} != {color.get(key)!r}')
+
+
 class D435i(Source):
     name = 'd435i'
 
     def __init__(self, on_frame, jpeg_quality=75, align_to_color=False,
-                 calib_intrinsics=None, with_ir=True, emitter_alternate=False):
+                 calib_intrinsics=None, with_ir=True, emitter_alternate=False,
+                 expected_serial=None):
         super().__init__(on_frame)
         self.jpeg_quality = jpeg_quality
         self.align_to_color = align_to_color
         self.calib_intrinsics = calib_intrinsics    # 我们自己标的,覆盖出厂值
         self.with_ir = with_ir
         self.emitter_alternate = emitter_alternate
+        self.expected_serial = expected_serial
         self._meta = None
         self._pipe = None
         self._prof = None
+        self._dev = None
+        self._depth_sensor = None
+        self._depth_choice = None
+        self._color_choice = None
+        self._sensor_depth_to_color = None
 
     def _open(self):
         ctx = rs.context()
-        if len(ctx.query_devices()) == 0:
+        devices = list(ctx.query_devices())
+        if not devices:
             raise RuntimeError('没有检测到 RealSense 设备')
-        dev = ctx.query_devices()[0]
+        if self.expected_serial:
+            matches = [device for device in devices
+                       if device.get_info(rs.camera_info.serial_number) ==
+                       self.expected_serial]
+            if len(matches) != 1:
+                observed = [device.get_info(rs.camera_info.serial_number)
+                            for device in devices]
+                raise RuntimeError(
+                    f'外参绑定 D435i {self.expected_serial}，在线设备为 {observed}')
+            dev = matches[0]
+        else:
+            dev = devices[0]
         dp = _pick(dev, rs.stream.depth, rs.format.z16)
         cp = _pick(dev, rs.stream.color, rs.format.bgr8, prefer=((1280, 720), (640, 480)))
+        if self.align_to_color and not cp:
+            raise RuntimeError('depth alignment requested but the color stream is unavailable')
         cfg = rs.config()
+        if self.expected_serial:
+            cfg.enable_device(self.expected_serial)
         cfg.enable_stream(rs.stream.depth, dp[0], dp[1], rs.format.z16, dp[2])
         ip = _pick(dev, rs.stream.infrared, rs.format.y8, idx=1) if self.with_ir else None
         if ip:
@@ -77,39 +123,67 @@ class D435i(Source):
                 s.set_option(rs.option.emitter_on_off, 1)
                 print('  [emitter] 交替模式已开启(散斑帧 / 干净帧 逐帧轮换)', flush=True)
 
-        di = prof.get_stream(rs.stream.depth).as_video_stream_profile().get_intrinsics()
-        ci = (prof.get_stream(rs.stream.color).as_video_stream_profile().get_intrinsics()
-              if cp else None)
         ext = None
         if cp:
             e = prof.get_stream(rs.stream.depth).get_extrinsics_to(prof.get_stream(rs.stream.color))
             ext = dict(rotation=list(e.rotation), translation=list(e.translation))
+        self._dev = dev
+        self._depth_sensor = ds
+        self._depth_choice = dp
+        self._color_choice = cp
+        self._sensor_depth_to_color = ext
+        return prof
+
+    def _set_meta_from_frames(self, depth_frame, color_frame):
+        """Freeze metadata from the frames that are actually put on the wire."""
+        di = depth_frame.profile.as_video_stream_profile().get_intrinsics()
+        depth_frame_id = ('camera_color_optical_frame' if self.align_to_color
+                          else 'camera_depth_optical_frame')
+        depth = _video_meta(di, depth_frame.profile.fps(), depth_frame_id)
+        color = None
+        if color_frame:
+            ci = color_frame.profile.as_video_stream_profile().get_intrinsics()
+            color = _video_meta(ci, color_frame.profile.fps(),
+                                'camera_color_optical_frame')
+
+        if self.align_to_color:
+            # rs.align resamples depth onto the color image grid.  The only
+            # honest back-projection metadata is therefore the profile of that
+            # aligned frame, and it must agree with the paired color frame.
+            if color is None:
+                raise RuntimeError('aligned depth frame arrived without a color frame')
+            _check_aligned_meta(depth, color)
+            depth_to_color = dict(
+                rotation=[1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+                translation=[0.0, 0.0, 0.0])
+        else:
+            depth_to_color = self._sensor_depth_to_color
 
         self._meta = dict(
             source='d435i', kind='depth_image',
-            serial=dev.get_info(rs.camera_info.serial_number),
-            firmware=dev.get_info(rs.camera_info.firmware_version),
-            usb=dev.get_info(rs.camera_info.usb_type_descriptor),
-            depth=dict(width=di.width, height=di.height, fps=dp[2],
-                       fx=di.fx, fy=di.fy, cx=di.ppx, cy=di.ppy,
-                       coeffs=list(di.coeffs), model=str(di.model)),
-            color=(dict(width=ci.width, height=ci.height, fps=cp[2],
-                        fx=ci.fx, fy=ci.fy, cx=ci.ppx, cy=ci.ppy,
-                        coeffs=list(ci.coeffs), model=str(ci.model)) if ci else None),
-            depth_to_color=ext,
-            depth_scale=ds.get_depth_scale(),
+            serial=self._dev.get_info(rs.camera_info.serial_number),
+            firmware=self._dev.get_info(rs.camera_info.firmware_version),
+            usb=self._dev.get_info(rs.camera_info.usb_type_descriptor),
+            depth=depth, color=color, depth_to_color=depth_to_color,
+            sensor_depth_to_color=self._sensor_depth_to_color,
+            depth_scale=self._depth_sensor.get_depth_scale(),
+            point_frame_id=depth_frame_id,
             aligned=self.align_to_color,
         )
-        # 用我们自己标定的彩色内参覆盖出厂值(出厂畸变全 0,不可用)
-        if self.calib_intrinsics and self._meta['color']:
+        # A self-calibrated K cannot simply replace the geometry used by
+        # librealsense's align filter.  Doing so would make the image size look
+        # right while silently back-projecting with a different camera model.
+        if self.calib_intrinsics and color and not self.align_to_color:
             k = self.calib_intrinsics
-            if [self._meta['color']['width'], self._meta['color']['height']] == k['resolution']:
-                self._meta['color'].update(fx=k['intrinsics'][0], fy=k['intrinsics'][1],
-                                           cx=k['intrinsics'][2], cy=k['intrinsics'][3],
-                                           coeffs=k['distortion_coeffs'],
-                                           model='calibrated_radtan')
+            if [color['width'], color['height']] == k['resolution']:
+                color.update(fx=k['intrinsics'][0], fy=k['intrinsics'][1],
+                             cx=k['intrinsics'][2], cy=k['intrinsics'][3],
+                             coeffs=k['distortion_coeffs'],
+                             model='calibrated_radtan')
                 self._meta['color_source'] = 'our_calibration'
-        return prof
+        elif self.calib_intrinsics and self.align_to_color:
+            self._meta['color_source'] = 'factory_alignment_geometry'
+            self._meta['calibrated_color_intrinsics_ignored_for_alignment'] = True
 
     def temperatures(self):
         try:
@@ -127,51 +201,67 @@ class D435i(Source):
         return self._meta
 
     def _run(self):
-        self._open()
-        align = rs.align(rs.stream.color) if self.align_to_color else None
-        seq = 0
-        enc = [int(cv2.IMWRITE_JPEG_QUALITY), self.jpeg_quality]
-        while not self._stop.is_set():
-            try:
-                fs = self._pipe.wait_for_frames(2000)
-            except Exception:
-                continue
-            if align:
-                fs = align.process(fs)
-            df = fs.get_depth_frame()
-            cf = fs.get_color_frame()
-            t = time.time()
-            if df:
-                self.on_frame('depth', dict(
-                    seq=seq, t=df.get_timestamp() / 1000.0,
-                    arr=np.asanyarray(df.get_data()),
-                    scale=self._meta['depth_scale']))
-            irf = fs.get_infrared_frame(1) if self.with_ir else None
-            if irf:
-                a = np.asanyarray(irf.get_data())
-                # 优先用 metadata 判断激光状态;拿不到就用高频能量兜底
-                # (实测两类相差 115 倍组内标准差,不可能分错)
-                laser = 1
+        try:
+            self._open()
+            align = rs.align(rs.stream.color) if self.align_to_color else None
+            seq = 0
+            enc = [int(cv2.IMWRITE_JPEG_QUALITY), self.jpeg_quality]
+            while not self._stop.is_set():
                 try:
-                    if irf.supports_frame_metadata(rs.frame_metadata_value.frame_laser_power_mode):
-                        laser = int(irf.get_frame_metadata(
-                            rs.frame_metadata_value.frame_laser_power_mode))
-                    elif self.emitter_alternate:
-                        laser = 1 if cv2.Laplacian(a, cv2.CV_64F).var() > 300 else 0
+                    fs = self._pipe.wait_for_frames(2000)
                 except Exception:
+                    # The server-level freshness watchdog owns the disconnect
+                    # decision.  Keep this loop interruptible during its short
+                    # grace window, rather than spinning forever after unplug.
+                    if self._stop.is_set():
+                        break
+                    continue
+                if align:
+                    fs = align.process(fs)
+                df = fs.get_depth_frame()
+                cf = fs.get_color_frame()
+                t = time.time()
+                if df and self._meta is None:
+                    self._set_meta_from_frames(df, cf)
+                if df:
+                    self.on_frame('depth', dict(
+                        seq=seq, t=df.get_timestamp() / 1000.0,
+                        arr=np.asanyarray(df.get_data()),
+                        scale=self._meta['depth_scale']))
+                irf = fs.get_infrared_frame(1) if self.with_ir else None
+                if irf:
+                    a = np.asanyarray(irf.get_data())
+                    # 优先用 metadata 判断激光状态;拿不到就用高频能量兜底
+                    # (实测两类相差 115 倍组内标准差,不可能分错)
+                    laser = 1
+                    try:
+                        if irf.supports_frame_metadata(rs.frame_metadata_value.frame_laser_power_mode):
+                            laser = int(irf.get_frame_metadata(
+                                rs.frame_metadata_value.frame_laser_power_mode))
+                        elif self.emitter_alternate:
+                            laser = 1 if cv2.Laplacian(a, cv2.CV_64F).var() > 300 else 0
+                    except Exception:
+                        pass
+                    ok, buf = cv2.imencode('.jpg', a, enc)
+                    if ok:
+                        self.on_frame('ir' if laser else 'ir_clean', dict(
+                            seq=seq, t=irf.get_timestamp() / 1000.0, laser=laser,
+                            w=a.shape[1], h=a.shape[0], jpeg=buf.tobytes(),
+                            _counts_as_freshness=False))
+                if cf:
+                    img = np.asanyarray(cf.get_data())
+                    ok, buf = cv2.imencode('.jpg', img, enc)
+                    if ok:
+                        self.on_frame('color', dict(
+                            seq=seq, t=cf.get_timestamp() / 1000.0,
+                            w=img.shape[1], h=img.shape[0], jpeg=buf.tobytes(),
+                            _counts_as_freshness=False))
+                seq += 1
+        finally:
+            if self._pipe:
+                try:
+                    self._pipe.stop()
+                except Exception:
+                    # Disconnect can make librealsense report the device as
+                    # already gone; cleanup must still finish the source thread.
                     pass
-                ok, buf = cv2.imencode('.jpg', a, enc)
-                if ok:
-                    self.on_frame('ir' if laser else 'ir_clean', dict(
-                        seq=seq, t=irf.get_timestamp() / 1000.0, laser=laser,
-                        w=a.shape[1], h=a.shape[0], jpeg=buf.tobytes()))
-            if cf:
-                img = np.asanyarray(cf.get_data())
-                ok, buf = cv2.imencode('.jpg', img, enc)
-                if ok:
-                    self.on_frame('color', dict(
-                        seq=seq, t=cf.get_timestamp() / 1000.0,
-                        w=img.shape[1], h=img.shape[0], jpeg=buf.tobytes()))
-            seq += 1
-        if self._pipe:
-            self._pipe.stop()

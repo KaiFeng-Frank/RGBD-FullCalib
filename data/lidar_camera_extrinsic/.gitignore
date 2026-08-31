@@ -1,0 +1,4 @@
+# Multi-scene bags and upstream PNG/PLY outputs can be many gigabytes.
+bags/
+preprocessed/
+preprocessed.staging.*/

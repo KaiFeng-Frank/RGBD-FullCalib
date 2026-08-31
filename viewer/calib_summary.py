@@ -1,33 +1,42 @@
 #!/usr/bin/env python3
 """收集所有标定产物,汇总成一份给界面消费的 JSON。
 
-未完成的项目也列出来(status=pending),这样界面上能看到"还差什么",
-而不是只展示已经做完的部分。
+结果与后续规划共用统一生命周期,便于按对 SLAM 的影响组织工作台。
 """
 import json
 import os
+import re
 import sys
+import time
 
 # 判决行不再手写:全部来自规则引擎(verdicts/rules_d435i.yaml)。
 # GUI 卡片、CLI 报告、REPORT.md 同一事实源 —— 改判决=改规则文件,不改代码。
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 try:
-    from verdicts.engine import evaluate, for_gui
-    _RULES = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                          'verdicts', 'rules_d435i.yaml')
-    _VERDICTS = for_gui(evaluate(_RULES))
-except Exception as _e:
-    _VERDICTS = {}
-    print(f'[calib_summary] 判决引擎不可用: {_e}')
-import os
-import re
+    from .lidar_calib import ACTIVE_TASK_IDS, collect_lidar
+except ImportError:  # server.py is also supported as a direct script in viewer/
+    from lidar_calib import ACTIVE_TASK_IDS, collect_lidar
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_RULES = os.path.join(ROOT, 'verdicts', 'rules_d435i.yaml')
+
+
+def _current_verdicts():
+    """Evaluate on every collect so a new result appears without a restart."""
+    try:
+        from verdicts.engine import evaluate, for_gui
+        return for_gui(evaluate(_RULES))
+    except Exception as exc:
+        print(f'[calib_summary] 判决引擎不可用: {exc}')
+        return {}
 
 
 def _read(p):
     fp = os.path.join(ROOT, p)
-    return open(fp).read() if os.path.exists(fp) else None
+    if not os.path.exists(fp):
+        return None
+    with open(fp, encoding='utf-8') as stream:
+        return stream.read()
 
 
 def _yaml_block(txt, cam):
@@ -99,6 +108,7 @@ SLAM_NOTES = {
 
 def collect():
     st = []
+    verdicts = _current_verdicts()
 
     # --- 阶段 1: RGB 内参 ---
     t = _read('data/cam_rgb-camchain.yaml')
@@ -115,24 +125,54 @@ def collect():
                ['分辨率', '1280 × 720']] if i else []),
         note='出厂畸变系数全为 0(未提供),边缘实测有 10 px 量级位移;'
              'cx 与出厂值吻合到 0.13 px,是标定可信度的直接证据。',
-        checks=_VERDICTS.get('rgb', [])))
+        checks=verdicts.get('rgb', []), device='D435i', scope='sensor'))
 
     # --- 阶段 2: IR 双目 ---
     t = _read('data/cam_ir-camchain.yaml')
     b0 = _yaml_block(t, 'cam0'); b1 = _yaml_block(t, 'cam1')
     i0 = _nums(b0, 'intrinsics'); T = _T(b1)
     base = (sum(x * x for x in [T[0][3], T[1][3], T[2][3]]) ** 0.5 * 1000) if T else None
+    stereo_validation_text = _read('results/stereo_rectification_validation.json')
+    stereo_validation = json.loads(stereo_validation_text) if stereo_validation_text else None
+    ir_rows = ([['fx / fy', f'{i0[0]:.3f} / {i0[1]:.3f}'],
+                ['cx / cy', f'{i0[2]:.3f} / {i0[3]:.3f}'],
+                ['立体基线', f'{base:.3f} mm'],
+                ['分辨率', '1280 × 720']] if i0 else [])
+    stereo_note = ''
+    if stereo_validation:
+        validation = stereo_validation['validation']
+        support = stereo_validation['support']
+        metrics = stereo_validation['metrics']
+        absolute = metrics['abs_vertical_px']
+        status_label = {
+            'passed': 'PASS', 'failed': 'FAIL', 'insufficient': 'INSUFFICIENT',
+        }.get(validation['status'], validation['status'].upper())
+        px = lambda value: '—' if value is None else f'{value:.3f}'
+        tail = metrics['fraction_abs_vertical_gt_2px']
+        ir_rows.extend([
+            ['原样 IR 硬件校正验收', f'{status_label}（当前 RGB-D 非阻塞）'],
+            ['独立支持',
+             f"{support['pairs_with_common_tags']}/{support['pairs_total']} 对 · "
+            f"{support['matched_corners']} corners · "
+             f"{support['coverage']['covered_cell_count']}/9 格"],
+            ['|Δy| median / P95 / P99',
+             f"{px(absolute['median'])} / {px(absolute['p95'])} / {px(absolute['p99'])} px"],
+            ['|Δy| > 2 px', '—' if tail is None else f'{tail * 100:.2f}%'],
+        ])
+        if validation['status'] == 'insufficient':
+            stereo_note = (f"独立验收只有 {support['matched_corners']} 个共同角点"
+                           f"(<600 冻结下限)，结论只能是 INSUFFICIENT；"
+                           '已观测尾部残差仍原样保留，未删帧、未改阈值。')
     st.append(dict(
         id='ir', name='IR 双目内参与基线', stage='阶段 2',
         status='done' if i0 else 'pending',
-        source='data/cam_ir-camchain.yaml',
-        rows=([['fx / fy', f'{i0[0]:.3f} / {i0[1]:.3f}'],
-               ['cx / cy', f'{i0[2]:.3f} / {i0[3]:.3f}'],
-               ['立体基线', f'{base:.3f} mm'],
-               ['分辨率', '1280 × 720']] if i0 else []),
+        source=('data/cam_ir-camchain.yaml + results/stereo_rectification_validation.json'
+                if stereo_validation else 'data/cam_ir-camchain.yaml'),
+        rows=ir_rows,
         note='IR 经 ASIC 硬件去畸变,k1 仅 −0.011(RGB 是 +0.110);'
-             'fx≠fy 说明出厂给的"严格相等"是 rectification 的产物,非物理真实。',
-        checks=_VERDICTS.get('ir', [])))
+             'fx≠fy 说明出厂给的"严格相等"是 rectification 的产物,非物理真实。'
+             + stereo_note,
+        checks=verdicts.get('ir', []), device='D435i', scope='sensor'))
 
     # --- 阶段 3: 深度质量 ---
     j = _read('results/depth_check.json')
@@ -150,7 +190,7 @@ def collect():
               if d3 else []),
         note='误差随 z² 增长,不是线性。0.45 m 以内测的主要是目标本身有多平。'
              '深度噪声在空间上相关(10~20 px 斑块),小邻域平均无法降噪。',
-        checks=_VERDICTS.get('depth', [])))
+        checks=verdicts.get('depth', []), device='D435i', scope='sensor'))
 
     # --- 阶段 4: cam-IMU ---
     t = _read('data/camimu-camchain-imucam.yaml')
@@ -176,7 +216,7 @@ def collect():
              '后重跑,accel 归一化残差仅从 6.42 降到 5.96(7%),平移依旧不收敛 —— '
              '残差与散布的主因不在加速度计标度/非正交,而在杠杆臂信噪比与工况振动。'
              '结论:平移交给 VIO 在线估计,不要冻结这个数。',
-        checks=_VERDICTS.get('camimu', [])))
+        checks=verdicts.get('camimu', []), device='D435i', scope='cross-sensor'))
 
     # --- RGB-IR 外参 ---
     t = _read('data/cam_trio-camchain.yaml')
@@ -197,7 +237,7 @@ def collect():
         note='必须在板子静止时采集:RGB 与 IR 是独立 sensor、无硬件同步,'
              '运动中时间戳差 44 ms,错位会被优化器塞进外参(曾导致 y 差 3 mm、z 差 7.8 mm)。'
              '静止后偏差降到 0.1 ms。',
-        checks=_VERDICTS.get('rgbir', [])))
+        checks=verdicts.get('rgbir', []), device='D435i', scope='cross-sensor'))
 
     # --- IMU 内参 ---
     j = _read('results/imu_intrinsic.json')
@@ -214,7 +254,7 @@ def collect():
         note='Kalibr 的 IMU 模型假设标度因子为 1、三轴正交,该假设在本机不成立。'
              '主要误差是 z–x 轴非正交 2.83°,它在固定姿态下伪装成 0.7% 的标度偏差 —— '
              '单姿态数据无法分离 bias/scale/非正交。',
-        checks=_VERDICTS.get('imuintr', [])))
+        checks=verdicts.get('imuintr', []), device='D435i IMU', scope='sensor'))
 
     # --- 温漂 ---
     j = _read('results/thermal_model.json')
@@ -231,7 +271,7 @@ def collect():
         note='Allan 方差要求恒温(测随机噪声),温漂要求升温(测趋势),两者要求相反。'
              '加速度计温漂是陀螺的 14 倍(13°C 跨度分别相当于 Allan 1 秒噪声的 79 倍和 5.3 倍)。'
              '深度温漂 −372 ppm/°C 是铝合金线胀系数的 16 倍,主因不是机械膨胀。',
-        checks=_VERDICTS.get('thermal', [])))
+        checks=verdicts.get('thermal', []), device='D435i', scope='sensor'))
 
     # 已销账(判决卡里可查):深度非线性(pixel-locking 归因+校正闭环)、
     # 多径(墙脚 +25mm/22cm 已定量)。材质与时间同步各完成一半,如实标注。
@@ -271,7 +311,55 @@ def collect():
     for stage in st:
         if stage['id'] in SLAM_NOTES:
             stage['slam'] = SLAM_NOTES[stage['id']]
-    return dict(stages=st, pending=pending)
+
+    # The two pages are lifecycle projections of one catalog: a task may exist
+    # in exactly one of them, either as an available result or a planned stage.
+    stages = []
+    for stage in st:
+        if stage['status'] == 'done':
+            states = {c[2] for c in stage.get('checks', [])}
+            stage['quality'] = ('bad' if 'bad' in states else
+                                'warn' if 'warn' in states else 'ok')
+            stages.append(stage)
+        else:
+            pending.append(dict(
+                id=stage['id'], device=stage.get('device', 'D435i'),
+                scope=stage.get('scope', 'sensor'), name=stage['name'],
+                stage=stage['stage'], lifecycle='pending', cost='按需采集/解算',
+                why=f"扩展该设备的标定覆盖: {stage['source']}",
+                how='按 CALIBRATION.md 对应阶段采集、解算并通过独立核查。',
+                output=stage['source'], progress='已纳入后续规划',
+                checks=stage.get('checks', []), slam=stage.get('slam')))
+
+    legacy_ids = ('d435i_reflectivity', 'd435i_timeshift_thermal',
+                  'd435i_gyro_scale', 'd435i_rolling_shutter')
+    for item, item_id in zip(pending, legacy_ids):
+        item.setdefault('id', item_id)
+        item.setdefault('device', 'D435i')
+        item.setdefault('scope', 'sensor')
+        item.setdefault('stage', 'D435i · 后续实验')
+        item.setdefault('lifecycle', 'pending')
+        item.setdefault('output', '尚未定义完成产物')
+        item.setdefault('progress', '尚无结果产物')
+        item.setdefault('checks', [])
+
+    lidar_stages, lidar_pending = collect_lidar(ROOT)
+    lidar_stages = [x for x in lidar_stages if x['id'] in ACTIVE_TASK_IDS]
+    lidar_pending = [x for x in lidar_pending if x['id'] in ACTIVE_TASK_IDS]
+    stages.extend(lidar_stages)
+    pending.extend(lidar_pending)
+
+    stage_ids = {x['id'] for x in stages}
+    pending_ids = {x['id'] for x in pending}
+    if (len(stage_ids) != len(stages) or len(pending_ids) != len(pending) or
+            stage_ids & pending_ids):
+        raise AssertionError('calibration result/todo projections overlap or duplicate')
+    counts = dict(done=len(stages), pending=sum(
+        x.get('lifecycle') == 'pending' for x in pending),
+        rework=sum(x.get('lifecycle') == 'rework' for x in pending),
+        total=len(stages) + len(pending))
+    return dict(stages=stages, pending=pending, counts=counts,
+                generated_at=time.time())
 
 
 if __name__ == '__main__':

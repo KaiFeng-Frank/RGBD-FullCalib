@@ -1,0 +1,9 @@
+{
+  "created_utc": "2026-08-31T12:51:42Z",
+  "d435i_serial": "947122070908",
+  "mid360s_serial": "ARMDN6B0030122",
+  "mount_session_id": "a56af70a-da0b-49d2-bc84-540c37cb3b05",
+  "physical_policy": "All bags in this work directory belong to one uninterrupted rigid mount. After loosening/remounting either sensor, use a new work directory.",
+  "rig_id": "mid360s-d435i-01",
+  "schema": "d435i_calib/lidar_camera_mount_session/v1"
+}
