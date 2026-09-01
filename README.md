@@ -39,11 +39,27 @@ with the calibrated IMU lever arm.
 
 ## The documented rig
 
-<p align="center">
-  <img src="docs/img/rig_mid360s_d435i_ready.jpg" alt="Rigid MID-360S and D435i sensor rig ready for use" width="47%">
-  <img src="docs/img/rig_mid360s_d435i_wiring.jpg" alt="MID-360S and D435i rig powered for data capture" width="47%">
-</p>
-<p align="center"><sub>Rigid MID-360S + D435i assembly: clean ready state (left), powered capture state (right)</sub></p>
+<table>
+  <tr>
+    <td align="center" valign="top" width="280">
+      <img src="docs/img/rig_mid360s_d435i_ready.jpg" alt="Rigid MID-360S and D435i sensor rig ready for use" width="260"><br>
+      <sub>Rigid MID-360S + D435i assembly</sub>
+    </td>
+    <td align="center" valign="top" width="280">
+      <img src="docs/img/rig_mid360s_d435i_wiring.jpg" alt="MID-360S and D435i rig powered for data capture" width="260"><br>
+      <sub>Powered capture and wiring</sub>
+    </td>
+    <td align="center" valign="top" width="280">
+      <img src="docs/img/rig_d435i.jpg" alt="Intel RealSense D435i used for calibration" width="260"><br>
+      <sub>Intel RealSense D435i</sub>
+    </td>
+    <td align="center" valign="top" width="280">
+      <img src="docs/img/target_aprilgrid.jpg" alt="DFOPTIX rigid AprilGrid calibration target" width="260"><br>
+      <sub>DFOPTIX rigid AprilGrid</sub>
+    </td>
+  </tr>
+</table>
+<p align="center"><sub>← Swipe or scroll horizontally to view the complete hardware set →</sub></p>
 
 The rig uses an Intel RealSense D435i (fw 5.12.7.100, USB 3.2) and a DFOPTIX
 `Tag6-320-35.2mm` rigid AprilGrid. The manufactured target rules out print

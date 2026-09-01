@@ -32,11 +32,27 @@ LiDAR–IMU 几何和雷达到 D435i 的常数时偏；逐点 `offset_time` 与 
 
 ## 实测雷视一体 rig
 
-<p align="center">
-  <img src="docs/img/rig_mid360s_d435i_ready.jpg" alt="已准备好的 MID-360S 与 D435i 刚性雷视一体支架" width="47%">
-  <img src="docs/img/rig_mid360s_d435i_wiring.jpg" alt="MID-360S 与 D435i 雷视一体 rig 通电采集中" width="47%">
-</p>
-<p align="center"><sub>MID-360S + D435i 刚性雷视一体支架：准备状态（左）与通电采集状态（右）</sub></p>
+<table>
+  <tr>
+    <td align="center" valign="top" width="280">
+      <img src="docs/img/rig_mid360s_d435i_ready.jpg" alt="已准备好的 MID-360S 与 D435i 刚性雷视一体支架" width="260"><br>
+      <sub>MID-360S + D435i 刚性组装</sub>
+    </td>
+    <td align="center" valign="top" width="280">
+      <img src="docs/img/rig_mid360s_d435i_wiring.jpg" alt="MID-360S 与 D435i 雷视一体 rig 通电采集中" width="260"><br>
+      <sub>通电采集与接线</sub>
+    </td>
+    <td align="center" valign="top" width="280">
+      <img src="docs/img/rig_d435i.jpg" alt="用于标定的 Intel RealSense D435i" width="260"><br>
+      <sub>Intel RealSense D435i</sub>
+    </td>
+    <td align="center" valign="top" width="280">
+      <img src="docs/img/target_aprilgrid.jpg" alt="DFOPTIX 刚性 AprilGrid 标定板" width="260"><br>
+      <sub>DFOPTIX 刚性 AprilGrid 标定板</sub>
+    </td>
+  </tr>
+</table>
+<p align="center"><sub>← 左右滑动或滚动查看完整硬件 →</sub></p>
 
 本 rig 使用 Intel RealSense D435i（fw 5.12.7.100，USB 3.2）与 DFOPTIX
 `Tag6-320-35.2mm` 刚性 AprilGrid。成品靶标排除了打印缩放误差源；
