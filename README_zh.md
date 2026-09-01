@@ -9,29 +9,11 @@ LiDAR–IMU 几何、跨设备时间对齐、扫描 deskew、MID-360S 原生查�
 [English README](README.md) · 完整实录 [CALIBRATION.md](CALIBRATION.md) ·
 误差影响分析 [IMPACT_ANALYSIS.md](IMPACT_ANALYSIS.md)
 
-![D435i 与 MID-360S 在彩色相机坐标系中的单画布实时融合点云](results/lidar_rgbd_fused_viewer.gif)
-
-<p align="center">
-  <img src="docs/img/rig_mid360s_d435i_ready.jpg" alt="已准备好的 MID-360S 与 D435i 刚性雷视一体支架" width="47%">
-  <img src="docs/img/rig_mid360s_d435i_wiring.jpg" alt="MID-360S 与 D435i 雷视一体 rig 通电采集中" width="47%">
-</p>
-<p align="center"><sub>MID-360S + D435i 刚性雷视一体支架：干净的准备状态（左）与通电采集状态（右）</sub></p>
-
 标定这行最怕的不是误差大，是**看起来漂亮但错得一致**。本工作台
 把拟合指标与物理参照、重复采集、device/mount 身份一起固结，并把适用的
 证据层级直接写在结果旁边。CLI、报告、GUI 与实时融合查看器共用同一份事实。
 
-## 这套 rig
-
-<p align="center">
-  <img src="docs/img/rig_d435i.jpg" alt="D435i 标定设备" width="61%">
-  <img src="docs/img/target_aprilgrid.jpg" alt="AprilGrid 刚性标定板" width="34%">
-</p>
-<p align="center"><sub>Intel RealSense D435i（fw 5.12.7.100，USB 3.2）· DFOPTIX <code>Tag6-320-35.2mm</code> 刚性 AprilGrid</sub></p>
-
-靶标是成品板不是自己打印的 —— 这点很重要:排除了打印缩放这个误差源,
-残差就能归到检测和相机身上,而不是尺子身上。`tagSpacing = 0.3` 经四方确认
-(尺子实测白缝 10.6 mm、型号名反推、Kalibr 默认、重投影误差扫描在 0.30 处有明确极小)。
+![D435i 与 MID-360S 在彩色相机坐标系中的单画布实时融合点云](results/lidar_rgbd_fused_viewer.gif)
 
 ## 已交付能力
 
@@ -47,6 +29,19 @@ cam-IMU → 加速度计内参 → 温漂模型，并配套采集/标定工具�
 画布中融合。文档 rig 已固结 MID-360S IMU 标定、五场景雷视外参、
 LiDAR–IMU 几何和雷达到 D435i 的常数时偏；逐点 `offset_time` 与 200 Hz
 内置陀螺仪驱动带已知 IMU 杠杆臂的扫描末旋转 deskew。
+
+## 实测雷视一体 rig
+
+<p align="center">
+  <img src="docs/img/rig_mid360s_d435i_ready.jpg" alt="已准备好的 MID-360S 与 D435i 刚性雷视一体支架" width="47%">
+  <img src="docs/img/rig_mid360s_d435i_wiring.jpg" alt="MID-360S 与 D435i 雷视一体 rig 通电采集中" width="47%">
+</p>
+<p align="center"><sub>MID-360S + D435i 刚性雷视一体支架：准备状态（左）与通电采集状态（右）</sub></p>
+
+本 rig 使用 Intel RealSense D435i（fw 5.12.7.100，USB 3.2）与 DFOPTIX
+`Tag6-320-35.2mm` 刚性 AprilGrid。成品靶标排除了打印缩放误差源；
+`tagSpacing = 0.3` 经尺子实测 10.6 mm 白缝、型号、Kalibr 默认值和
+重投影误差扫描四重确认。
 
 ## MID-360S IMU 端到端 pipeline 与 ROS 2 部署
 

@@ -10,32 +10,12 @@ and a ROS 2 calibrated-IMU runtime.**
 [中文版 README](README_zh.md) · field notes [CALIBRATION.md](CALIBRATION.md) (Chinese) ·
 error propagation [IMPACT_ANALYSIS.md](IMPACT_ANALYSIS.md) (Chinese)
 
-![Live D435i and MID-360S fused point cloud in one camera-frame canvas](results/lidar_rgbd_fused_viewer.gif)
-
-<p align="center">
-  <img src="docs/img/rig_mid360s_d435i_ready.jpg" alt="Rigid MID-360S and D435i sensor rig ready for use" width="47%">
-  <img src="docs/img/rig_mid360s_d435i_wiring.jpg" alt="MID-360S and D435i rig powered for data capture" width="47%">
-</p>
-<p align="center"><sub>Rigid MID-360S + D435i assembly: clean ready state (left), powered capture state (right)</sub></p>
-
 Calibration's worst failure mode is **looking beautiful while being consistently wrong**.
 This workbench pairs fitted metrics with physical references, repeated captures
 and device/mount identity, then publishes the applicable evidence tier beside
 the result. The same facts feed the CLI, report, GUI and live fused viewer.
 
-## The rig
-
-<p align="center">
-  <img src="docs/img/rig_d435i.jpg" alt="D435i calibration rig" width="61%">
-  <img src="docs/img/target_aprilgrid.jpg" alt="Rigid AprilGrid calibration target" width="34%">
-</p>
-<p align="center"><sub>Intel RealSense D435i (fw 5.12.7.100, USB 3.2) · DFOPTIX <code>Tag6-320-35.2mm</code> rigid AprilGrid</sub></p>
-
-The target is a manufactured board, not a home print — which matters: it rules out
-print-scaling as an error source, so residuals trace to detection and to the camera,
-not to the ruler. `tagSpacing = 0.3` was confirmed four independent ways
-(ruler-measured 10.6 mm gap, the part number, the Kalibr default, and a
-reprojection-error sweep with a clear minimum at 0.30).
+![Live D435i and MID-360S fused point cloud in one camera-frame canvas](results/lidar_rgbd_fused_viewer.gif)
 
 ## Delivered scope
 
@@ -56,6 +36,20 @@ operational MID-360S results: its IMU calibration, five-scene LiDAR–camera
 extrinsic, LiDAR–IMU geometry, and LiDAR–D435i constant time offset. Per-point
 `offset_time` and the 200 Hz built-in gyro drive scan-end rotational deskew
 with the calibrated IMU lever arm.
+
+## The documented rig
+
+<p align="center">
+  <img src="docs/img/rig_mid360s_d435i_ready.jpg" alt="Rigid MID-360S and D435i sensor rig ready for use" width="47%">
+  <img src="docs/img/rig_mid360s_d435i_wiring.jpg" alt="MID-360S and D435i rig powered for data capture" width="47%">
+</p>
+<p align="center"><sub>Rigid MID-360S + D435i assembly: clean ready state (left), powered capture state (right)</sub></p>
+
+The rig uses an Intel RealSense D435i (fw 5.12.7.100, USB 3.2) and a DFOPTIX
+`Tag6-320-35.2mm` rigid AprilGrid. The manufactured target rules out print
+scaling as an error source. `tagSpacing = 0.3` was confirmed four independent
+ways: ruler-measured 10.6 mm gap, part number, Kalibr default, and a
+reprojection-error sweep with a clear minimum at 0.30.
 
 ## End-to-end MID-360S IMU pipeline and ROS 2 deployment
 
