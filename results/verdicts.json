@@ -80,7 +80,7 @@
     "reference": 1.0,
     "ref_label": "PASS",
     "status": "warn",
-    "verdict": "非阻塞告警；当前 RGB-D 主链不受影响，切换 Stereo/VIO 前重新采集并验收"
+    "verdict": "条件性部署门：当前 RGB-D 主链已完成且不受影响；只有其他部署要启用 IR Stereo/Stereo-Inertial 前端时才另采独立验收集，不是本 rig 当前欠项"
   },
   {
     "id": "depth_flatness",
@@ -146,7 +146,7 @@
     "reference": 0.0,
     "ref_label": "期望可用",
     "status": "warn",
-    "verdict": "单场景混杂主导(镜面地板+饱和),门限被工具正确拒绝 —— 受控摆位后重跑"
+    "verdict": "当前单场景混杂结论已固结(镜面地板+饱和),门限被工具正确拒绝；受控材质协议仅供其他设备或特殊材质部署参考，不是本 rig 当前欠项"
   },
   {
     "id": "ts_two_cams",

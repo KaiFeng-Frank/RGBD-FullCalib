@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "task_id": "mid360s_lidar_imu",
+  "status": "operational",
+  "local_schema": "d435i_calib/mid360s_lidar_imu_operational/v1",
+  "created_utc": "2026-08-31T23:20:31Z",
+  "rig_id": "mid360s-d435i-01",
+  "mount_session_id": "a56af70a-da0b-49d2-bc84-540c37cb3b05",
+  "devices": [
+    {
+      "role": "lidar",
+      "model": "Livox MID-360S",
+      "serial": "ARMDN6B0030122"
+    }
+  ],
+  "method": "MID-360S official IMU geometry and coordinate definition, checked against the mounted-rig dual-gyro recording and verified by real-scan deskew A/B",
+  "frame_convention": {
+    "from": "mid360s_imu_frame",
+    "to": "livox_frame",
+    "equation": "p_lidar = T_lidar_imu * p_imu"
+  },
+  "source_data": [
+    {
+      "role": "manufacturer_geometry",
+      "path": "https://terra-1-g.djicdn.com/65c028cd298f4669a7f0e40e50ba1131/Mid-360S/UM/20260601/Livox_Mid-360s_User_Manual_en.pdf",
+      "sha256": "bf064396c2a5254bc3fc98044d65b2dcf3ad3354e942eee1ee46b37e6e0c80d4"
+    },
+    {
+      "role": "dynamic_capture",
+      "path": "data/lidar_imu_timesync_20260901_run1",
+      "sha256": "1528c7c1a62d9176ba6d2d3f228a1b2fef0092342194963119c0994bb522131c",
+      "hash_scheme": "sha256-tree-v1(length-prefixed relative path, size, bytes)"
+    },
+    {
+      "role": "deskew_validation",
+      "path": "results/mid360s_deskew_validation.json",
+      "sha256": "460c2d46cdaaec27477404fd724aa38de01cd8f1ea9a338eed15891a8d15188a"
+    },
+    {
+      "role": "driver_timestamp_mapping",
+      "path": "livox_ros_driver2/src/lddc.cpp",
+      "sha256": "37dcc252a743fafe14c7ee5341d8827f1a5298ec910502b201bd0feb3476c71e"
+    },
+    {
+      "role": "driver_packet_timestamp_mapping",
+      "path": "livox_ros_driver2/src/comm/pub_handler.cpp",
+      "sha256": "4a81276ab8e425619fd58184b4b3ae386d5b07c31598295334b8a18907eaf9da"
+    }
+  ],
+  "result": {
+    "T_lidar_imu": [
+      [
+        1.0,
+        0.0,
+        0.0,
+        0.011
+      ],
+      [
+        0.0,
+        1.0,
+        0.0,
+        0.02329
+      ],
+      [
+        0.0,
+        0.0,
+        1.0,
+        -0.04412
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "rotation_basis": "The MID-360S manual defines IMU acceleration and angular-velocity directions as identical to the point-cloud axes.",
+    "translation_basis": "The MID-360S manual gives the IMU-chip position in point-cloud coordinates as x=11.00 mm, y=23.29 mm, z=-44.12 mm.",
+    "time_offset_lidar_to_imu_ms": 0.0,
+    "time_offset_convention": "t_imu = t_lidar + time_offset_lidar_to_imu_ms / 1000",
+    "time_alignment_basis": "Livox CustomMsg timebase/offset_time and the Livox IMU header are consumed on the same nanosecond timestamp axis; no additional LiDAR-to-built-in-IMU offset is applied.",
+    "deskew_mode": "rotation_only",
+    "deskew_reference": "scan_end",
+    "per_point_time_field": "offset_time",
+    "offset_time_valid_ratio": 1.0,
+    "imu_scan_coverage_ratio": 0.9984544049459042,
+    "scan_span_ms_median": 100.210624,
+    "high_rotation_raw_plane_p95_mm": 70.0354083003421,
+    "high_rotation_deskew_plane_p95_mm": 20.38690390318174,
+    "high_rotation_p95_reduction_ratio": 0.7089057607010174,
+    "high_rotation_improved_scans": 70,
+    "high_rotation_accepted_scans": 70,
+    "low_rotation_raw_plane_p95_mm": 17.255209542774054,
+    "low_rotation_deskew_plane_p95_mm": 17.262151718857375,
+    "lever_arm_ablation_no_lever_p95_mm": 20.211561543643835,
+    "lever_arm_ablation_with_lever_p95_mm": 19.478762057838487,
+    "lever_arm_ablation_paired_ratio_median": 0.9724035166295804
+  },
+  "summary": {
+    "quality": "OPERATIONAL · current MID-360S",
+    "T_lidar_imu_translation": "[+11.00, +23.29, -44.12] mm",
+    "axis_rotation": "identity by manufacturer coordinate definition",
+    "timestamp_axis": "Livox point/IMU common nanosecond axis; applied td 0.000 ms",
+    "deskew": "rotation-only plus IMU lever arm to scan end; high-rotation plane P95 70.04 -> 20.39 mm",
+    "lever_arm_ablation": "same-point P95 20.21 -> 19.48 mm versus zero lever arm",
+    "low_rotation_control": "plane P95 17.255 -> 17.262 mm"
+  },
+  "note": "当前 MID-360S 的 LiDAR–内置 IMU 外参已固结；实时点云使用逐点 offset_time 与 200 Hz 陀螺做扫描末参考的旋转 deskew。"
+}

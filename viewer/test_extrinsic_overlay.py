@@ -30,6 +30,47 @@ def validated_document():
     return doc
 
 
+def operational_timesync_document(offset_ms=-5.989415918681975):
+    return {
+        'status': 'operational',
+        'local_schema': server.TIMESYNC_LOCAL_SCHEMA,
+        'rig_id': 'test-rig',
+        'mount_session_id': 'test-mount-session',
+        'devices': [
+            {'role': 'lidar', 'serial': 'LIVOX-0001'},
+            {'role': 'rgbd', 'serial': 'D435I-0001'},
+        ],
+        'result': {
+            'time_offset_lidar_to_d435_depth_ms': offset_ms,
+            'time_offset_lidar_to_d435_depth_convention':
+                server.TIMESYNC_EQUATION,
+        },
+    }
+
+
+def operational_lidar_imu_document():
+    return {
+        'status': 'operational',
+        'local_schema': server.LIDAR_IMU_LOCAL_SCHEMA,
+        'rig_id': 'test-rig',
+        'mount_session_id': 'test-mount-session',
+        'devices': [{'role': 'lidar', 'serial': 'LIVOX-0001'}],
+        'frame_convention': {
+            'from': 'mid360s_imu_frame',
+            'to': 'livox_frame',
+            'equation': server.LIDAR_IMU_EQUATION,
+        },
+        'result': {
+            'T_lidar_imu': [
+                [1, 0, 0, 0.011],
+                [0, 1, 0, 0.02329],
+                [0, 0, 1, -0.04412],
+                [0, 0, 0, 1],
+            ],
+        },
+    }
+
+
 class ExtrinsicLoaderTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -133,6 +174,137 @@ class ExtrinsicLoaderTest(unittest.TestCase):
             server.require_preview_device_serial(got, 'rgbd', '')
 
 
+class TimesyncLoaderTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.path = os.path.join(self.tmp.name, 'timesync.json')
+        self.extrinsic = {
+            'available': True,
+            'rig_id': 'test-rig',
+            'mount_session_id': 'test-mount-session',
+            'lidar_serial': 'LIVOX-0001',
+            'camera_serial': 'D435I-0001',
+        }
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def write(self, document):
+        with open(self.path, 'w', encoding='utf-8') as stream:
+            json.dump(document, stream, allow_nan=False)
+
+    def test_operational_offset_is_loaded_with_declared_direction(self):
+        self.write(operational_timesync_document())
+        got = server.load_timesync_result(
+            self.path, extrinsic_preview=self.extrinsic)
+        self.assertTrue(got['available'])
+        self.assertTrue(got['applied'])
+        self.assertAlmostEqual(got['time_offset_ms'], -5.989415918681975)
+        self.assertAlmostEqual(got['time_offset_s'], -0.005989415918681975)
+        self.assertEqual(got['equation'], server.TIMESYNC_EQUATION)
+        self.assertEqual(got['rig_id'], 'test-rig')
+
+    def test_missing_result_fails_closed_to_zero(self):
+        got = server.load_timesync_result(
+            self.path, extrinsic_preview=self.extrinsic)
+        self.assertFalse(got['available'])
+        self.assertFalse(got['applied'])
+        self.assertEqual(got['status'], 'missing')
+        self.assertEqual(got['time_offset_s'], 0.0)
+        self.assertIn('not present', got['reason'])
+
+    def test_wrong_direction_or_rig_never_applies_offset(self):
+        document = operational_timesync_document()
+        document['result']['time_offset_lidar_to_d435_depth_convention'] = (
+            't_livox_scan = t_d435i_depth + offset')
+        self.write(document)
+        got = server.load_timesync_result(
+            self.path, extrinsic_preview=self.extrinsic)
+        self.assertFalse(got['available'])
+        self.assertEqual(got['status'], 'invalid')
+        self.assertEqual(got['time_offset_s'], 0.0)
+        self.assertIn('wrong direction', got['reason'])
+
+        document = operational_timesync_document()
+        document['devices'][0]['serial'] = 'OTHER-LIDAR'
+        self.write(document)
+        got = server.load_timesync_result(
+            self.path, extrinsic_preview=self.extrinsic)
+        self.assertFalse(got['available'])
+        self.assertEqual(got['time_offset_s'], 0.0)
+        self.assertIn('does not match', got['reason'])
+
+    def test_non_finite_and_unit_scale_mistakes_fail_closed(self):
+        document = operational_timesync_document(offset_ms=1001.0)
+        self.write(document)
+        got = server.load_timesync_result(self.path)
+        self.assertFalse(got['available'])
+        self.assertEqual(got['time_offset_s'], 0.0)
+        self.assertIn('1000 ms safety bound', got['reason'])
+
+
+class LidarImuLoaderTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.path = os.path.join(self.tmp.name, 'lidar_imu.json')
+        self.extrinsic = {
+            'available': True,
+            'rig_id': 'test-rig',
+            'mount_session_id': 'test-mount-session',
+            'lidar_serial': 'LIVOX-0001',
+        }
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def write(self, document):
+        with open(self.path, 'w', encoding='utf-8') as stream:
+            json.dump(document, stream, allow_nan=False)
+
+    def load(self):
+        with mock.patch.object(server, 'LIDAR_IMU_RESULT', self.path):
+            return server.load_lidar_imu_result(self.extrinsic)
+
+    def test_operational_transform_is_loaded_in_declared_direction(self):
+        self.write(operational_lidar_imu_document())
+        got = self.load()
+        self.assertTrue(got['available'])
+        self.assertTrue(got['applied'])
+        self.assertEqual(got['equation'], server.LIDAR_IMU_EQUATION)
+        np.testing.assert_allclose(
+            np.asarray(got['T_lidar_imu'])[:3, 3],
+            [0.011, 0.02329, -0.04412])
+
+    def test_missing_or_wrong_direction_falls_back_to_identity(self):
+        got = self.load()
+        self.assertFalse(got['available'])
+        np.testing.assert_array_equal(got['T_lidar_imu'], np.eye(4))
+
+        document = operational_lidar_imu_document()
+        document['frame_convention']['from'] = 'livox_frame'
+        document['frame_convention']['to'] = 'mid360s_imu_frame'
+        self.write(document)
+        got = self.load()
+        self.assertFalse(got['available'])
+        np.testing.assert_array_equal(got['T_lidar_imu'], np.eye(4))
+        self.assertIn('frame_convention', got['reason'])
+
+    def test_non_rigid_or_wrong_device_transform_is_never_applied(self):
+        document = operational_lidar_imu_document()
+        document['result']['T_lidar_imu'][0][0] = 2.0
+        self.write(document)
+        got = self.load()
+        self.assertFalse(got['available'])
+        self.assertIn('proper orthonormal', got['reason'])
+
+        document = operational_lidar_imu_document()
+        document['devices'][0]['serial'] = 'OTHER-LIDAR'
+        self.write(document)
+        got = self.load()
+        self.assertFalse(got['available'])
+        self.assertIn('does not match', got['reason'])
+
+
 class TransformDirectionTest(unittest.TestCase):
     def test_livox_ros_wire_to_color_optical_viewer(self):
         # Ros2Points wire mapping for p_livox=[1,2,3] is [-2,3,-1].
@@ -229,6 +401,17 @@ class ProtocolAndMarkupTest(unittest.TestCase):
         self.assertIn('p_camera = T_camera_lidar * p_lidar', html)
         self.assertIn('当前 RIG 外参已载入 · 雷视融合', html)
         self.assertIn('双源实时点流 · 当前 rig 外参', html)
+
+    def test_fused_hud_exposes_rotation_deskew_offset_and_frame_delta(self):
+        path = os.path.join(os.path.dirname(__file__), 'viewer.html')
+        with open(path, encoding='utf-8') as stream:
+            html = stream.read()
+        self.assertEqual(html.count('dv.getFloat64(12,false)'), 2)
+        self.assertIn('旋转 deskew', html)
+        self.assertIn('含 IMU 杠杆臂', html)
+        self.assertIn('不含平台平移', html)
+        self.assertIn('已应用时移', html)
+        self.assertIn('最新帧 Δt(L−D)', html)
 
     def test_fused_view_keeps_rgbd_images_and_separates_stream_controls(self):
         path = os.path.join(os.path.dirname(__file__), 'viewer.html')

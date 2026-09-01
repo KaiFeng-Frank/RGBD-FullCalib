@@ -93,6 +93,28 @@ class VerdictPipelineIntegrationTest(unittest.TestCase):
         check_names = [row[0] for row in ir_cards[0]['checks']]
         self.assertEqual(sum('原样 IR 双目' in name for name in check_names), 2)
 
+    def test_gui_summary_exposes_completed_results_only(self):
+        from viewer import calib_summary
+        from viewer.lidar_calib import ACTIVE_TASK_IDS, TASKS
+
+        summary = calib_summary.collect()
+        done = len(summary['stages'])
+        self.assertEqual(done, 11)
+        self.assertEqual(summary['pending'], [])
+        self.assertEqual(summary['integrity'], [])
+        self.assertEqual(
+            summary['counts'],
+            {'done': done, 'pending': 0, 'rework': 0, 'total': done},
+        )
+        reference_ids = {item['id'] for item in summary['references']}
+        self.assertEqual(len(summary['references']), 7)
+        inactive_lidar_ids = {
+            task['id'] for task in TASKS
+            if task['id'] not in ACTIVE_TASK_IDS
+        }
+        self.assertTrue(inactive_lidar_ids <= reference_ids)
+        self.assertFalse(set(ACTIVE_TASK_IDS) & reference_ids)
+
     def test_cli_json_matches_engine_evaluate(self):
         with tempfile.TemporaryDirectory(prefix='d435i-verdict-test-') as tmp:
             json_path = Path(tmp) / 'verdicts.json'

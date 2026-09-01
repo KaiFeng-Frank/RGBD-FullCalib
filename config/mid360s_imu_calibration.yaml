@@ -1,0 +1,42 @@
+mid360s_imu_pipeline:
+  ros__parameters:
+    # Relative paths resolve under project_root.  Empty identity strings mean
+    # "use the manifest"; non-empty values must match it exactly.
+    # launch requires an explicit project_root and overrides this placeholder.
+    project_root: ""
+    manifest: "data/lidar_camera_extrinsic/capture_session.json"
+    work_dir: "data/mid360s_imu_pipeline"
+    output: "results/mid360s_imu.json"
+    topic: "/livox/imu"
+    frame: "livox_frame"
+    mid360s_serial: ""
+    rig_id: ""
+    mount_session_id: ""
+    # [""] selects live auto-capture while preserving the ROS STRING_ARRAY
+    # type.  For offline regression, replace it with bag/NPZ path strings.
+    inputs: [""]
+    fit_poses: 12
+    holdout_poses: 3
+    live_hold_s: 0.5
+    bag_hold_s: 0.5
+    min_samples: 60
+    min_separation_deg: 18.0
+    latitude_deg: 22.3
+    altitude_m: 30.0
+    python: ""
+    verify_existing: false
+
+mid360s_imu_runtime:
+  ros__parameters:
+    # launch requires an explicit project_root and overrides this placeholder.
+    project_root: ""
+    input_topic: "/livox/imu"
+    output_topic: "/livox/imu_calibrated"
+    result_path: "results/mid360s_imu.json"
+    expected_frame: "livox_frame"
+    # Axes follow the manufacturer-aligned convention; the origin is the IMU
+    # origin and remains distinct from livox_frame through T_lidar_imu.
+    output_frame: "mid360s_imu_frame"
+    mid360s_serial: "ARMDN6B0030122"
+    rig_id: "mid360s-d435i-01"
+    mount_session_id: "a56af70a-da0b-49d2-bc84-540c37cb3b05"

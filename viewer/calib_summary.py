@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""收集所有标定产物,汇总成一份给界面消费的 JSON。
+"""收集已发布的标定产物,汇总成一份给界面消费的 JSON。
 
-结果与后续规划共用统一生命周期,便于按对 SLAM 的影响组织工作台。
+缺失或不可用的已发布产物只进入内部完整性记录,不投影为未来计划。
 """
 import json
 import os
@@ -13,9 +13,10 @@ import time
 # GUI 卡片、CLI 报告、REPORT.md 同一事实源 —— 改判决=改规则文件,不改代码。
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 try:
-    from .lidar_calib import ACTIVE_TASK_IDS, collect_lidar
+    from .lidar_calib import (ACTIVE_TASK_IDS, collect_lidar,
+                              lidar_references)
 except ImportError:  # server.py is also supported as a direct script in viewer/
-    from lidar_calib import ACTIVE_TASK_IDS, collect_lidar
+    from lidar_calib import ACTIVE_TASK_IDS, collect_lidar, lidar_references
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _RULES = os.path.join(ROOT, 'verdicts', 'rules_d435i.yaml')
@@ -273,48 +274,70 @@ def collect():
              '深度温漂 −372 ppm/°C 是铝合金线胀系数的 16 倍,主因不是机械膨胀。',
         checks=verdicts.get('thermal', []), device='D435i', scope='sensor'))
 
-    # 已销账(判决卡里可查):深度非线性(pixel-locking 归因+校正闭环)、
-    # 多径(墙脚 +25mm/22cm 已定量)。材质与时间同步各完成一半,如实标注。
-    pending = [
-        dict(name='材质反射率(受控版)',
-             why='单场景初测被混杂主导(镜面地板+散斑饱和),工具已具备并会拒绝混杂场景',
-             how='同距离摆黑/白/镜面/半透明并排,tools/reflectivity_validity.py 重跑',
-             cost='30 分钟',
-             slam=dict(online='offline',
-                 online_note='仅离线 — 门限属于传感器特性;运行时按 IR 亮度做 0/1 门控是应用不是标定',
-                 impact='mid',
-                 impact_note='失效本身可门控(无效像素易剔除,实测镜面区近半失效);'
-                             '真正风险是镜面虚像给出假几何 —— 未定量,正是受控实验要回答的')),
-        dict(name='时间同步漂移 t_shift(T)',
-             why='跨会话差 0.46 ms 已进判决规则(warn);完整温度模型还没有',
-             how='在不同 ASIC 温度下各跑一次 cam-IMU 标定,拟合 t_shift(T)', cost='数小时',
-             slam=dict(online='online',
-                 online_note='可在线(公认)— td 在线估计是 VINS 类标配,直接覆盖温漂;'
-                             '离线温度模型只在冻结部署(无 td 状态)时才需要',
-                 impact='low',
-                 impact_note='0.46 ms 在 ω=2 rad/s 下 ≈ 0.8 px,地面机器人工况 ≈ 0.2 px(噪底下)')),
-        dict(name='陀螺标度因子', why='加速度计已标,陀螺的 scale 需要已知角速度才能标',
-             how='需要转台;或用视觉旋转当参考(精度较低)', cost='需要设备',
-             slam=dict(online='offline',
-                 online_note='不可在线 — 与旋转本身强耦合,常规运动下不可观,需转台级已知激励',
-                 impact='low',
-                 impact_note='scale 偏 0.5% → 90° 旋转积分偏 0.45°,VIO 中被视觉持续矫正;'
-                             '只在长时间纯积分(视觉失效窗)才升为一阶')),
-        dict(name='卷帘快门 line delay', why='RGB 是卷帘快门,快速运动时逐行曝光会让特征位置偏移',
-             how='需要转台或闪光灯;仅在用 RGB 做 VIO 时必要', cost='需要设备',
-             slam=dict(online='offline',
-                 online_note='仅离线(RS-aware VIO 有在线估计研究,非标配)',
-                 impact='low',
-                 impact_note='本 rig 追踪走 IR(全局快门)→ 只伤 RGB 色彩对齐;'
-                             '若改用 RGB 追踪则升为一阶:激进运动 ~26 px 剪切(按 15 ms 读出估)')),
+    # 供其他设备或不同部署条件选用的方法参考。这些条目不是
+    # 当前 rig 的未完成任务，也不进入 pending/rework 或完成数。
+    references = [
+        dict(
+            id='d435i_reflectivity', device='RGB-D',
+            name='材质反射率受控检查',
+            applies='新 RGB-D 设备、特殊材质环境，或需要制定无效深度门限时',
+            why='镜面、黑色与半透明材质会改变散斑有效性；受控并排采集可区分材质效应与场景几何混杂。',
+            how='同距离摆放黑/白/镜面/半透明样品，用 tools/reflectivity_validity.py 分析。',
+            output='材质 × 距离的有效率、偏差与门控建议',
+            cost='参考工作量：约 30 分钟',
+            slam=dict(
+                online='offline',
+                online_note='传感器特性需离线建模；运行时可按 IR 亮度门控。',
+                impact='mid',
+                impact_note='无效像素可门控；镜面虚像属于假几何风险，应按目标材质实测。')),
+        dict(
+            id='d435i_timeshift_thermal', device='RGB-D + IMU',
+            name='时间偏移温度稳定性',
+            applies='冻结时间偏移且需要跨温度运行的视觉惯性设备',
+            why='在线 td 可吸收常数时移；不含 td 状态的冻结部署可参考温度稳定性建模。',
+            how='在不同 ASIC 温度下重复 cam–IMU 标定，拟合 t_shift(T) 并留出复测。',
+            output='t_shift(T) 拟合及适用温区',
+            cost='参考工作量：数小时',
+            slam=dict(
+                online='online',
+                online_note='td 在线估计是 VINS 类常用状态；离线温度模型面向冻结部署。',
+                impact='low',
+                impact_note='0.46 ms 在 ω=2 rad/s 下约为 0.8 px，应结合目标运动工况判断。')),
+        dict(
+            id='d435i_gyro_scale', device='IMU',
+            name='陀螺仪标度因子',
+            applies='含长时间视觉失效窗、纯惯导段，或具备已知角速度基准时',
+            why='陀螺仪 scale 需要已知旋转激励，不能由一般静态姿态数据分离。',
+            how='使用转台，或以经核查的视觉旋转作为参考，并用独立旋转复测。',
+            output='三轴 gyro scale 与独立旋转复测',
+            cost='参考条件：转台或视觉角度基准',
+            slam=dict(
+                online='offline',
+                online_note='标度与真实旋转强耦合，需已知激励离线求解。',
+                impact='low',
+                impact_note='scale 偏 0.5% 会使 90° 纯积分旋转累积约 0.45° 偏差。')),
+        dict(
+            id='d435i_rolling_shutter', device='RGB 相机',
+            name='卷帘快门 line delay',
+            applies='以卷帘快门 RGB 做 VIO，或存在快速运动与逐行曝光剪切时',
+            why='line delay 会把快速运动映射为逐行特征位移；全局快门追踪链不需要此项。',
+            how='使用转台或闪光灯估计行延迟，并用快速运动图像复测。',
+            output='line delay 及快速运动复测',
+            cost='参考条件：转台或闪光灯',
+            slam=dict(
+                online='offline',
+                online_note='RS-aware VIO 存在研究性在线估计，工程上通常离线处理。',
+                impact='low',
+                impact_note='使用全局快门 IR 追踪时不进入位姿链；使用 RGB 追踪时按运动速度评估。')),
     ]
+    references.extend(lidar_references())
+
     for stage in st:
         if stage['id'] in SLAM_NOTES:
             stage['slam'] = SLAM_NOTES[stage['id']]
 
-    # The two pages are lifecycle projections of one catalog: a task may exist
-    # in exactly one of them, either as an available result or a planned stage.
     stages = []
+    integrity = []
     for stage in st:
         if stage['status'] == 'done':
             states = {c[2] for c in stage.get('checks', [])}
@@ -322,44 +345,28 @@ def collect():
                                 'warn' if 'warn' in states else 'ok')
             stages.append(stage)
         else:
-            pending.append(dict(
-                id=stage['id'], device=stage.get('device', 'D435i'),
-                scope=stage.get('scope', 'sensor'), name=stage['name'],
-                stage=stage['stage'], lifecycle='pending', cost='按需采集/解算',
-                why=f"扩展该设备的标定覆盖: {stage['source']}",
-                how='按 CALIBRATION.md 对应阶段采集、解算并通过独立核查。',
-                output=stage['source'], progress='已纳入后续规划',
-                checks=stage.get('checks', []), slam=stage.get('slam')))
-
-    legacy_ids = ('d435i_reflectivity', 'd435i_timeshift_thermal',
-                  'd435i_gyro_scale', 'd435i_rolling_shutter')
-    for item, item_id in zip(pending, legacy_ids):
-        item.setdefault('id', item_id)
-        item.setdefault('device', 'D435i')
-        item.setdefault('scope', 'sensor')
-        item.setdefault('stage', 'D435i · 后续实验')
-        item.setdefault('lifecycle', 'pending')
-        item.setdefault('output', '尚未定义完成产物')
-        item.setdefault('progress', '尚无结果产物')
-        item.setdefault('checks', [])
+            integrity.append(dict(
+                id=stage['id'], source=stage['source'], status='missing',
+                detail='已发布标定产物缺失'))
 
     lidar_stages, lidar_pending = collect_lidar(ROOT)
     lidar_stages = [x for x in lidar_stages if x['id'] in ACTIVE_TASK_IDS]
     lidar_pending = [x for x in lidar_pending if x['id'] in ACTIVE_TASK_IDS]
     stages.extend(lidar_stages)
-    pending.extend(lidar_pending)
+    integrity.extend(dict(
+        id=item['id'], source=item.get('output', ''),
+        status='invalid' if item.get('lifecycle') == 'rework' else 'missing',
+        detail=item.get('progress', '已发布标定产物不可用'))
+        for item in lidar_pending)
 
     stage_ids = {x['id'] for x in stages}
-    pending_ids = {x['id'] for x in pending}
-    if (len(stage_ids) != len(stages) or len(pending_ids) != len(pending) or
-            stage_ids & pending_ids):
-        raise AssertionError('calibration result/todo projections overlap or duplicate')
-    counts = dict(done=len(stages), pending=sum(
-        x.get('lifecycle') == 'pending' for x in pending),
-        rework=sum(x.get('lifecycle') == 'rework' for x in pending),
-        total=len(stages) + len(pending))
-    return dict(stages=stages, pending=pending, counts=counts,
-                generated_at=time.time())
+    integrity_ids = {x['id'] for x in integrity}
+    if (len(stage_ids) != len(stages) or
+            len(integrity_ids) != len(integrity) or stage_ids & integrity_ids):
+        raise AssertionError('calibration result/integrity projections overlap or duplicate')
+    counts = dict(done=len(stages), pending=0, rework=0, total=len(stages))
+    return dict(stages=stages, references=references, pending=[], counts=counts,
+                integrity=integrity, generated_at=time.time())
 
 
 if __name__ == '__main__':

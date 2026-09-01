@@ -9,12 +9,28 @@
 
 直接雷视流程已实现：`preflight` / 静态联合录包 / 预处理 / 初值 /
 求解 / 投影审查 / 导入，以及把自己 rig 的外参交给同一画布查看器。
-作者当前 device/mount 已生效的结果为
-`results/mid360s_d435i_extrinsic.local.json`：它由 scene06–scene10 五组静态稠密
-RGB-D↔LiDAR 配准与多起点一致性检查生成，以 **LOCAL operational**
-层级绑定记录的设备和安装会话，并由同画布融合查看器自动载入。
-**VALIDATED** 是在此基础上增加独立数据验收的层级，详见
-[`MID360_CALIBRATION.md`](MID360_CALIBRATION.md)。LiDAR–IMU 与时间同步作为独立工程链管理。
+当前 device/mount 的四项 MID-360S 结果均已完成，融合所需的三项
+跨传感器结果由同画布查看器载入：
+
+| 项目 | 结果产物 | 已固结结果 |
+|---|---|---|
+| MID-360S IMU 内参 | `results/mid360s_imu.json` | 17 姿态（14 fit + 3 holdout）；fit/holdout RMS 0.00962/0.01194 m/s²；accel bias/scale/非正交 + gyro bias + 短窗白噪声 |
+| LiDAR–D435i 6DoF 外参 | `results/mid360s_d435i_extrinsic.local.json` | scene06–scene10 五组静态稠密 RGB-D↔LiDAR 配准，inlier median/P90 10.019/16.873 mm，多起点收敛 0.00720° / 0.120 mm |
+| LiDAR–内置 IMU | `results/mid360s_lidar_imu.json` | `p_lidar = T_lidar_imu p_imu`；官方定义轴向同基，平移 `[+11.00,+23.29,−44.12] mm` |
+| LiDAR–D435i 时间 | `results/mid360s_d435i_timesync.json` | dual-gyro 时偏 −1.940 ms；最终深度时钟方程 `t_depth = t_livox − 5.989 ms` |
+
+MID-360S IMU 噪声数字是 196.156 Hz、0.495805 s 窗的短窗 white-noise
+density，明确不声称长时 Allan bias instability/random walk；gyro
+scale/非正交仅属于已知角速率转台的通用参考方法。
+
+Livox 点云同时启用扫描末 rotation-only deskew，使用逐点
+`offset_time`、内置 IMU 和已知杠杆臂的旋转分量。实扫高旋转主平面
+P95 为 70.04→20.39 mm，70/70 帧改善；低旋转对照 17.255→17.262 mm；
+同点杠杆臂 ablation 20.21→19.48 mm；`offset_time` 有效率 100%，
+IMU 完整覆盖 646/647 帧。该实现不声称平台平移或完整 6DoF deskew。
+
+[`MID360_CALIBRATION.md`](MID360_CALIBRATION.md) 保留给其他设备/部署的通用
+严格验收参考；该参考不反向定义上表当前 rig operational 结果为未完成。
 
 ## 开源使用口径
 
@@ -176,7 +192,7 @@ LiDAR index/intensity 图全部非空；这用于防止上游异常返回成功�
 预处理先写入独立 staging 目录，只在上述完整性检查全部通过后才原子性
 更名为 `preprocessed/`。其中 `SOURCE_BAGS.json` 固结每个 bag 的文件集与
 SHA-256、设备身份和 mount session；`SOURCE_SOLVER.json` 固结 Docker image ID、
-repo digest 与上游 commit。后续 initial/solve/view/import 发现原始 bag 或
+repo digest 与上游 commit。initial/solve/view/import 各阶段发现原始 bag 或
 solver 身份改变时会拒绝继续，防止旧派生物被冒充为当前数据的结果。
 
 `initial` 打开上游手工 2D–3D 对应 UI；关窗后必须已保存有限、非零四元数的
@@ -227,13 +243,13 @@ p_lidar = T_lidar_camera * p_camera
 
 默认产物为 `results/mid360s_d435i_extrinsic.draft.json`，不覆盖，并记录实际
 Docker repo digest 与上游 source commit。导入器负责 draft/LOCAL 路径；
-canonical VALIDATED 产物由独立验收层生成并保持覆盖保护。
+选择通用严格验收参考的复现者，可以另行生成带覆盖保护的
+VALIDATED 产物；该可选层不改写 operational 的生效含义。
 
 对自己未拆动的 rig，完成方向核对和几何投影审查后，可按本项目的
 `d435i_calib/lidar_camera_extrinsic_local/v1` 结构保存 `status: operational`
 的本地结果，并用 `./view_pointcloud.sh fused --extrinsic PATH` 载入。
-`operational` 表示该外参已对记录的 device/mount 生效；独立数据验收层产生
-`validated` 结果。
+`operational` 表示该外参已对记录的 device/mount 生效。
 
 ## 可选覆盖
 

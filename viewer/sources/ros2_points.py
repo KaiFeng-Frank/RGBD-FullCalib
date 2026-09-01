@@ -6,9 +6,11 @@ The normal path consumes ``sensor_msgs/msg/PointCloud2``.  Livox
 viewer can attach to an already-running MID-360 without forcing a second
 driver or throwing away its per-point timing at the publisher boundary.
 
-This source intentionally forwards only geometry plus display attributes.
-It is a viewer, not a deskew or calibration transport: per-point timestamps,
-ring/tag fields and covariance are not carried by the browser protocol.
+Livox ``CustomMsg`` scans can be rotation-deskewed before the display
+downsampling step.  The source retains every point's ``offset_time`` long
+enough to interpolate the device IMU, then emits one cloud referenced to the
+scan end.  Ring/tag fields and covariance are still not carried by the browser
+protocol.
 """
 from __future__ import annotations
 
@@ -20,6 +22,12 @@ import time
 import numpy as np
 
 from .base import Source
+try:
+    from ..livox_deskew import (ImuCoverageError, ImuRing,
+                                rotation_deskew_to_scan_end)
+except ImportError:  # ``server.py`` imports ``sources`` as a top-level package.
+    from livox_deskew import (ImuCoverageError, ImuRing,
+                              rotation_deskew_to_scan_end)
 
 
 POINTCLOUD2 = 'sensor_msgs/msg/PointCloud2'
@@ -172,12 +180,25 @@ class Ros2Points(Source):
     name = 'ros2'
 
     def __init__(self, on_frame, topic='auto', max_points=250_000,
-                 axes='auto', topic_timeout=10.0):
+                 axes='auto', topic_timeout=10.0, deskew=True,
+                 imu_topic='/livox/imu', time_offset_s=0.0,
+                 T_lidar_imu=None):
         super().__init__(on_frame)
         self.topic = _absolute_topic(topic)
         self.max_points = max(1, int(max_points))
         self.axes_requested = axes
         self.topic_timeout = float(topic_timeout)
+        self.deskew_requested = bool(deskew)
+        self.imu_topic = _absolute_topic(imu_topic)
+        self.time_offset_s = float(time_offset_s)
+        if not math.isfinite(self.time_offset_s):
+            raise ValueError('time_offset_s must be finite')
+        self.T_lidar_imu = T_lidar_imu
+        self._imu = ImuRing(max_samples=4096)
+        self._pending_custom = None
+        self._deskew_dropped = 0
+        self._deskew_applied = False
+        self._deskew_last = None
         self._meta = None
         self._seq = 0
         self._intensity_limits = None
@@ -287,24 +308,41 @@ class Ros2Points(Source):
                     break
         return xyz, intensity, rgb, [f.name for f in msg.fields]
 
-    def _custom_arrays(self, msg):
+    def _custom_arrays(self, msg, *, apply_deskew=False):
         reported = int(getattr(msg, 'point_num', 0))
         total = min(reported if reported > 0 else len(msg.points), len(msg.points))
-        step = max(1, math.ceil(total / self.max_points))
-        count = (total + step - 1) // step
-        xyz = np.empty((count, 3), np.float32)
-        intensity = np.empty(count, np.float32)
-        j = 0
-        for i in range(0, total, step):
+        if total <= 0:
+            return (np.empty((0, 3), np.float32), None, None,
+                    ['x', 'y', 'z', 'reflectivity', 'offset_time', 'tag', 'line'],
+                    int(getattr(msg, 'timebase', 0)))
+        xyz = np.empty((total, 3), np.float32)
+        intensity = np.empty(total, np.float32)
+        offsets = np.empty(total, np.uint32)
+        for i in range(total):
             p = msg.points[i]
-            xyz[j] = (p.x, p.y, p.z)
-            intensity[j] = p.reflectivity
-            j += 1
-        xyz, intensity = xyz[:j], intensity[:j]
+            xyz[i] = (p.x, p.y, p.z)
+            intensity[i] = p.reflectivity
+            offsets[i] = p.offset_time
         valid = np.isfinite(xyz).all(axis=1)
         valid &= np.abs(xyz).sum(axis=1) > 1e-9
-        return (xyz[valid], self._normalise_intensity(intensity[valid]), None,
-                ['x', 'y', 'z', 'reflectivity', 'offset_time', 'tag', 'line'])
+        selected = np.flatnonzero(valid)
+        if len(selected) > self.max_points:
+            selected = selected[::math.ceil(len(selected) / self.max_points)]
+
+        reference_ns = int(getattr(msg, 'timebase', 0))
+        if apply_deskew:
+            result = rotation_deskew_to_scan_end(
+                xyz, offsets, reference_ns, self._imu, indices=selected,
+                T_lidar_imu=self.T_lidar_imu)
+            output = result.points.astype(np.float32)
+            reference_ns = result.reference_time_ns
+            self._deskew_applied = True
+            self._deskew_last = result
+        else:
+            output = xyz[selected]
+        return (output, self._normalise_intensity(intensity[selected]), None,
+                ['x', 'y', 'z', 'reflectivity', 'offset_time', 'tag', 'line'],
+                reference_ns)
 
     def _emit(self, msg, msg_type: str):
         frame_id = getattr(getattr(msg, 'header', None), 'frame_id', '') or ''
@@ -313,9 +351,13 @@ class Ros2Points(Source):
             xyz, intensity, rgb, fields = self._pointcloud2_arrays(msg)
             stamp = _header_time(msg)
         else:
-            xyz, intensity, rgb, fields = self._custom_arrays(msg)
-            timebase = int(getattr(msg, 'timebase', 0))
-            stamp = timebase * 1e-9 if timebase > 0 else _header_time(msg)
+            try:
+                xyz, intensity, rgb, fields, reference_ns = self._custom_arrays(
+                    msg, apply_deskew=self.deskew_requested)
+            except ImuCoverageError:
+                return False
+            stamp = (reference_ns * 1e-9 if reference_ns > 0
+                     else _header_time(msg)) + self.time_offset_s
         advances_stream = self._advances_stream(
             bool(len(xyz)), _message_stamp_ns(msg, msg_type))
         xyz = _to_view_axes(xyz, axes)
@@ -347,10 +389,26 @@ class Ros2Points(Source):
                 recommended_max_range=30.0 if 'livox' in label.lower() else 20.0,
                 view_center=center, view_distance=max(3.0, min(100.0, span * 1.2)),
             )
+            if msg_type == LIVOX_CUSTOM:
+                self._meta.update(
+                    deskew=dict(
+                        applied=self._deskew_applied,
+                        mode='rotation_only' if self._deskew_applied else 'off',
+                        reference='scan_end' if self._deskew_applied else 'timebase',
+                        imu_topic=self.imu_topic if self._deskew_applied else None,
+                        per_point_time_field='offset_time',
+                        lever_arm_applied=(
+                            bool(self._deskew_last.lever_arm_applied)
+                            if self._deskew_last is not None else False),
+                        dropped_before_coverage=self._deskew_dropped,
+                    ),
+                    time_offset_s=self.time_offset_s,
+                )
         self.on_frame('points', dict(
             seq=self._seq, t=stamp, xyz=xyz, intensity=intensity, rgb=rgb,
             _counts_as_freshness=advances_stream))
         self._seq += 1
+        return True
 
     def _run(self):
         import rclpy
@@ -386,9 +444,37 @@ class Ros2Points(Source):
                 history=HistoryPolicy.KEEP_LAST, depth=1,
                 reliability=ReliabilityPolicy.BEST_EFFORT,
                 durability=DurabilityPolicy.VOLATILE)
-            node.create_subscription(
-                msg_cls, self.topic, lambda msg: self._emit(msg, msg_type), qos)
+            if msg_type == LIVOX_CUSTOM and self.deskew_requested:
+                from sensor_msgs.msg import Imu
+
+                def try_pending():
+                    if self._pending_custom is None:
+                        return
+                    pending = self._pending_custom
+                    if self._emit(pending, msg_type):
+                        self._pending_custom = None
+
+                def on_imu(msg):
+                    stamp = msg.header.stamp
+                    timestamp_ns = int(stamp.sec) * 1_000_000_000 + int(stamp.nanosec)
+                    gyro = msg.angular_velocity
+                    self._imu.add(timestamp_ns, (gyro.x, gyro.y, gyro.z))
+                    try_pending()
+
+                def on_custom(msg):
+                    if self._pending_custom is not None:
+                        self._deskew_dropped += 1
+                    self._pending_custom = msg
+                    try_pending()
+
+                node.create_subscription(Imu, self.imu_topic, on_imu, qos)
+                node.create_subscription(msg_cls, self.topic, on_custom, qos)
+            else:
+                node.create_subscription(
+                    msg_cls, self.topic, lambda msg: self._emit(msg, msg_type), qos)
             print(f'[ROS 2] 订阅 {self.topic} [{msg_type}]  QoS=best_effort/volatile')
+            if msg_type == LIVOX_CUSTOM and self.deskew_requested:
+                print(f'[ROS 2] 旋转 deskew: {self.imu_topic} + offset_time -> scan_end')
             try:
                 while not self._stop.is_set() and rclpy.ok():
                     rclpy.spin_once(node, timeout_sec=0.1)

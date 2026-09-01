@@ -1,51 +1,64 @@
-# 作者 MID-360S rig：独立定量验收层级
+# MID-360S 标定通用参考协议
 
-本页定义作者这一套 MID-360S + D435i rig 从 LOCAL operational 进入
-VALIDATED 的独立定量验收层级。通用采集、求解、导入和查看入口见
+本页是给他人、其他设备和不同部署条件的方法参考。GUI 的
+「标定参考」共 7 项：4 项 D435i 参考与 3 项 LiDAR/rig 参考。
+参考项不是当前文档 rig 的 pending/rework，不计入它的结果总数，
+也不表示版本迭代。通用采集、求解、导入和查看入口见
 [`LIDAR_CAMERA_EXTRINSIC.md`](LIDAR_CAMERA_EXTRINSIC.md)。
 
-当前 device/mount 已生效的结果为
-`results/mid360s_d435i_extrinsic.local.json`。它汇总 scene06–scene10 五场景稠密配准、
-10.019/16.873 mm 优化器内点 median/P90 与 0.00720° / 0.120 mm 多起点一致性，
-以 **LOCAL operational** 层级绑定记录的设备和安装会话，并已用于同画布雷视融合。
-VALIDATED 层级在此基础上增加独立数据验收。LiDAR–IMU 与时间同步按独立工程链管理。
+## 当前文档 rig 的已固结结果
 
-| `task_id` | 结果产物 | 当前状态 |
+| `task_id` | 结果产物 | 当前 rig 状态 |
 |---|---|---|
-| `mid360s_d435i_ext` | `results/mid360s_d435i_extrinsic.local.json` | LOCAL operational · 当前 device/mount 已生效 |
+| `mid360s_imu` | `results/mid360s_imu.json` | operational；17 姿态（14 fit + 3 holdout），fit/holdout RMS 0.00962/0.01194 m/s²，rank 9/9 |
+| `mid360s_d435i_ext` | `results/mid360s_d435i_extrinsic.local.json` | operational；scene06–scene10 五场景，已用于同画布雷视融合 |
+| `mid360s_lidar_imu` | `results/mid360s_lidar_imu.json` | operational；轴向同基，IMU 位置 `[+11.00,+23.29,−44.12] mm` |
+| `mid360s_d435i_td` | `results/mid360s_d435i_timesync.json` | operational；dual-gyro 时偏 −1.940 ms，合成深度时钟方程 `t_depth = t_livox − 5.989 ms` |
 
-直接雷视流程已实现；官方 `direct_visual_lidar_calibration` targetless
-流程的安全默认输出是 `results/mid360s_d435i_extrinsic.draft.json`。
-对某次连续、未拆动的安装，方向和投影审查后可使用明确标为
-`operational` 的本地结果。下面的完成门定义作者 rig 从 LOCAL 进入 VALIDATED 的审计层。
+MID-360S IMU 结果固结 accel bias
+`[−0.0174527,+0.0276977,−0.0155995] m/s²`、scale
+`[0.9996646,1.0068007,1.0070296]`、非正交
+`[−0.00223534,+0.00176965,−0.00316793] rad` 与 gyro bias
+`[−0.00640217,+0.000822435,−0.00831762] rad/s`。短窗白噪声密度基于
+196.156 Hz、0.495805 s 窗；`allan_characterization = not_performed`，不把它写成
+长时 Allan bias instability/random walk。gyro scale/非正交仅保留在已知角速率
+转台的通用参考协议中，不属于该 operational 结果字段。
 
-### 作者 rig 的 VALIDATED 完成门
+LiDAR–IMU 结果同时驱动 Livox 扫描末 rotation-only deskew：逐点
+`offset_time` + 内置 IMU + 官方杠杆臂。同一正式协议下，高旋转主平面
+P95 为 70.04→20.39 mm，70/70 帧改善；低旋转对照 17.255→17.262 mm。
+同点杠杆臂 ablation 为 20.21→19.48 mm；`offset_time` 有效率 100%，
+IMU 完整覆盖 646/647 帧。该范围不声称平台平移或完整 6DoF deskew。
 
-进入 VALIDATED 时，完成门由 `viewer/lidar_calib.py` 固定，不能由结果 JSON 自己声明：
+## GUI 中的 3 项 LiDAR/rig 参考
 
-- `task_id`、设备角色/型号/序列号、`rig_id`、UTC 时间、方法和坐标方向必须完整；
-- 求解集与独立验收集必须分别记录路径和不同的 SHA-256；
-- `result` 必须符合该任务的字段、类型和刚体矩阵约束；
-- `validation.checks` 必须恰好覆盖预注册 gate ID，且 check 值必须与 result 值一致；
-- 程序重新计算每个数值阈值，不相信产物自报的 `passed`；
-- 已完成产物之间的 rig/传感器序列号必须一致；
-- 最终留出数据的哈希不得与任何上游求解/验收数据重合；最终产物还必须引用当前 6 个
-  上游 JSON 的实际 SHA-256。任一上游结果变化，最终验收自动回到「需重做」。
+| 参考项 | 适用情况 | 参考输出 |
+|---|---|---|
+| MID-360S 测距与点云健康验收 | 新设备验收、特殊材质环境或疑似测距/覆盖异常 | 测距、覆盖率与冷热稳态健康报告 |
+| LiDAR/相机到 `base_link` 安装外参 | 把雷视组件安装到机器人并需要 `base_link` 位姿 | `T_base_lidar` / `T_base_camera` |
+| 雷视–IMU 独立留出数据闭环验收 | 其他设备或复现者需要完整复现性验收 | 独立留出闭环报告与输入哈希 |
 
-结构不完整时状态为 `pending`；结构完整但阈值、独立核查、身份一致性或上游哈希失败时为
-`rework`；全部通过才是 `done`。若启用作者验收状态页，它每 5 秒重读一次，
-无需重启服务。
+**下文的 VALIDATED 数值门是可选的通用严格验收模板，不会反向把上表
+operational 结果定义为未完成。** 只有选择该模板的复现者，才使用其
+`pending` / `rework` / `done` 生命周期。
 
-## 扩展工程目录
+## 可选严格 VALIDATED 结果封装
 
-健康、IMU、时间同步与 rig 闭环规则按应用需求分别启用；当前雷视外参保持
-LOCAL operational 已生效状态。
+选择该严格层时，数值门由 `viewer/lidar_calib.py` 固定，不由结果 JSON
+自己声明：
 
-## 作者 rig 的 VALIDATED 预注册数值门
+- `task_id`、设备角色/型号/序列号、`rig_id`、UTC 时间、方法和坐标方向完整；
+- 求解集与独立验收集分别记录路径和不同的 SHA-256；
+- `result` 符合对应字段、类型和刚体矩阵约束；
+- `validation.checks` 恰好覆盖预注册 gate ID，check 值与 result 值一致；
+- 程序重算每个数值阈值，不仅依赖产物自报的 `passed`；
+- 同一严格验收包内的 rig/传感器序列号一致；
+- 留出数据不与求解数据哈希重合，并引用对应上游 JSON 的实际 SHA-256。
 
-这些阈值定义作者 rig 从 LOCAL 进入 VALIDATED 的定量口径。应在对应数据采集前冻结；
-若要改变，应先改注册表并留下
-原因，不能看完结果后迁移阈值。
+## 可选严格 VALIDATED 预注册数值门
+
+下列阈值仅对选择严格参考协议的复现者生效。应在对应数据采集前冻结，
+不在看完结果后迁移阈值。
 
 | 任务 | VALIDATED 完成门 |
 |---|---|

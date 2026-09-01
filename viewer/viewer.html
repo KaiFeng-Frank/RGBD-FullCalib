@@ -38,8 +38,7 @@ html,body{height:100%;background:var(--bg);color:var(--fg);
 .card .st{font-size:10.5px;padding:1px 7px;border-radius:10px;font-weight:500}
 .st.done{background:rgba(63,185,80,.16);color:var(--ok)}
 .st.local{background:rgba(88,166,255,.16);color:var(--accent)}
-.st.pending{background:rgba(210,153,34,.16);color:var(--warn)}
-.st.rework{background:rgba(248,81,73,.16);color:var(--err)}
+.st.reference{background:rgba(163,113,247,.16);color:#bc8cff}
 .card .src{font-size:10.5px;color:var(--dim);margin:3px 0 10px}
 .card table{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:9px}
 .card td{padding:3px 0;vertical-align:top}
@@ -257,7 +256,7 @@ html.embed select,html.embed input[type=text]{width:112px}
     <div id="nav">
       <button data-p="live" class="on">实时点云</button>
       <button data-p="calib">标定结果</button>
-      <button data-p="todo">标定项目</button>
+      <button data-p="reference">标定参考</button>
     </div>
     <div class="page on" id="page-live">
       <div id="singleLive">
@@ -296,11 +295,12 @@ html.embed select,html.embed input[type=text]{width:112px}
       <div id="calibList"></div>
     </div></div>
 
-    <div class="page" id="page-todo"><div class="wrap">
-      <h2 class="sec">标定项目</h2>
-      <div class="sub2" id="todoSub">读取标定项目状态…</div>
-      <div id="todoList"></div>
+    <div class="page" id="page-reference"><div class="wrap">
+      <h2 class="sec">标定参考</h2>
+      <div class="sub2" id="referenceSub">面向其他设备或不同部署条件的方法目录；不计入当前 rig 标定状态。</div>
+      <div id="referenceList"></div>
     </div></div>
+
   </div>
 </div>
 <script>
@@ -309,6 +309,7 @@ const $=id=>document.getElementById(id);
 const escHtml=t=>String(t).replace(/[&<>"']/g,m=>({
   '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 const T_META=0,T_DEPTH=1,T_COLOR=2,T_POINTS=3,T_STATS=4,T_IR=5;
+const TIMESYNC_EQUATION='t_d435i_depth = t_livox_scan + time_offset_lidar_to_d435_depth_ms / 1000';
 const queryParams=window.__VIEW_PARAMS||new URLSearchParams(location.search);
 const DUAL=queryParams.has('dual'), EMBED=queryParams.has('embed');
 const OVERLAY=queryParams.has('overlay');
@@ -527,6 +528,9 @@ try{
 const S={meta:null,kind:"depth_image",dw:0,dh:0,scale:0.001,hasD:false,hasC:false,
   hasP:false,hasPI:false,hasPRGB:false,nativeCount:0,
   rgbdMeta:null,lidarMeta:null,extrinsic:null,overlayStats:{},overlayOnline:{rgbd:false,lidar:false},
+  depthStamp:null,lidarStamp:null,timeOffsetMs:0,timeSyncApplied:false,
+  timeSyncStatus:'not_loaded',deskewMode:'unknown',deskewReference:null,
+  deskewLeverArm:false,
   yaw:0.6,pitch:0.35,dist:3.2,tx:0,ty:0,targetZ:-1.2,
   viewCenter:[0,0,-1.2],viewDistance:3.2,
   fpsD:0,fpsC:0,fpsP:0,lastD:0,lastC:0,lastP:0,pts:0,valid:0,rx:0,
@@ -584,17 +588,15 @@ document.querySelectorAll('#nav button').forEach(b=>{
   b.onclick=()=>{
     document.querySelectorAll('#nav button').forEach(x=>x.classList.toggle('on',x===b));
     document.querySelectorAll('.page').forEach(p=>p.classList.toggle('on',p.id==='page-'+b.dataset.p));
-    if(b.dataset.p==='calib'||b.dataset.p==='todo') loadCalib();
+    if(b.dataset.p==='calib'||b.dataset.p==='reference') loadCalib();
   };
 });
 
 function renderCalib(c){
   if(!c) return;
   const esc=t=>String(t).replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));
-  const counts=c.counts||{done:(c.stages||[]).length,pending:(c.pending||[]).length,rework:0,
-    total:(c.stages||[]).length+(c.pending||[]).length};
+  const counts=c.counts||{done:(c.stages||[]).length,total:(c.stages||[]).length};
   $("calibSub").textContent=`${counts.done} 项标定结果已载入；当前 rig 外参已投入融合查看器。`;
-  $("todoSub").textContent='按实测影响与 rig 需求组织的标定项目。';
   const stageCards=(c.stages||[]).map(s=>`
     <div class="card">
       <h3>${esc(s.name)}
@@ -617,30 +619,28 @@ function renderCalib(c){
       <div class="note">${esc(s.note)}</div>
     </div>`).join('');
   $("calibList").innerHTML=stageCards||'<div class="card"><div class="note">尚无可用标定结果。</div></div>';
-  const todoCards=(c.pending||[]).map(t=>`
+  const referenceCards=(c.references||[]).map(r=>`
     <div class="card">
-      <h3>${esc(t.name)}<span class="st ${t.lifecycle==='rework'?'rework':'pending'}">${t.lifecycle==='rework'?'待更新':'规划中'}</span>
-        <span style="color:var(--accent);font-size:10.5px;font-weight:400">${esc(t.device||'')}</span>
-        <span style="color:var(--dim);font-size:11px;font-weight:400">${esc(t.cost)}</span></h3>
-      ${t.slam?`<div class="slam">
-        <span class="pill on-${t.slam.online}">${
-          {online:'可在线标定',partial:'部分可在线',offline:'仅离线标定'}[t.slam.online]}</span>
-        <span class="pill im-${t.slam.impact}">SLAM 影响:${
-          {high:'高',mid:'中',low:'低',split:'分层'}[t.slam.impact]}</span>
-        <div class="sn">${esc(t.slam.online_note)}</div>
-        <div class="sn">${esc(t.slam.impact_note)}</div>
+      <h3>${esc(r.name)}
+        <span class="st reference">参考项</span>
+        <span style="color:var(--accent);font-size:10.5px;font-weight:400">${esc(r.device||'')}</span>
+        <span style="color:var(--dim);font-size:11px;font-weight:400">${esc(r.cost||'')}</span></h3>
+      ${r.slam?`<div class="slam">
+        <span class="pill on-${r.slam.online}">${
+          {online:'可在线标定',partial:'部分可在线',offline:'仅离线标定'}[r.slam.online]}</span>
+        <span class="pill im-${r.slam.impact}">SLAM 影响:${
+          {high:'高',mid:'中',low:'低',split:'分层'}[r.slam.impact]}</span>
+        <div class="sn">${esc(r.slam.online_note)}</div>
+        <div class="sn">${esc(r.slam.impact_note)}</div>
       </div>`:''}
       <table>
-        <tr><td>为什么要做</td><td>${esc(t.why)}</td></tr>
-        <tr><td>怎么做</td><td>${esc(t.how)}</td></tr>
-        <tr><td>完成产物</td><td>${esc(t.output||'—')}</td></tr>
-        ${t.completion?`<tr><td>完成条件</td><td>${esc(t.completion)}</td></tr>`:''}
-        <tr><td>项目状态</td><td>${esc(t.progress||'已纳入后续规划')}</td></tr>
+        <tr><td>适用场景</td><td>${esc(r.applies||'—')}</td></tr>
+        <tr><td>参考价值</td><td>${esc(r.why||'—')}</td></tr>
+        <tr><td>参考流程</td><td>${esc(r.how||'—')}</td></tr>
+        <tr><td>参考输出</td><td>${esc(r.output||'—')}</td></tr>
       </table>
-      ${(t.checks||[]).map(k=>`<div class="chk ${k[2]}"><i>${
-        k[2]==='ok'?'✓':k[2]==='warn'?'!':'✗'}</i><b>${esc(k[0])} — <em>${esc(k[1])}</em></b></div>`).join('')}
     </div>`).join('');
-  $("todoList").innerHTML=todoCards||'<div class="card"><div class="note">标定项目均已完成。</div></div>';
+  $("referenceList").innerHTML=referenceCards||'<div class="card"><div class="note">当前没有附加参考项。</div></div>';
 }
 
 /* ---------- 温度曲线 ---------- */
@@ -724,6 +724,25 @@ function handleOverlayMeta(meta,streamRole){
         meta.transform_equation!=='p_camera = T_camera_lidar * p_lidar'||
         meta.serial!==S.extrinsic.lidar_serial)
       rejectOverlay('LiDAR 后端未严格按 p_camera=T_camera_lidar*p_livox 输出米制彩色相机坐标');
+    const offsetS=Number(meta.time_offset_s);
+    if(!Number.isFinite(offsetS))
+      rejectOverlay('LiDAR 后端未声明有限的已应用时移');
+    const sync=meta.timesync||{};
+    if(sync.applied===true&&(
+        sync.available!==true||sync.equation!==TIMESYNC_EQUATION||
+        !Number.isFinite(+sync.time_offset_s)||
+        Math.abs(+sync.time_offset_s-offsetS)>1e-12))
+      rejectOverlay('LiDAR 后端的时移结果与实际应用值/方向不一致');
+    if(sync.applied!==true&&Math.abs(offsetS)>1e-12)
+      rejectOverlay('LiDAR 后端声称未应用时移，但输出时间戳非零修正');
+    const deskew=meta.deskew||{};
+    S.deskewMode=['rotation_only','off'].includes(deskew.mode)
+      ?deskew.mode:'unavailable';
+    S.deskewReference=deskew.reference||null;
+    S.deskewLeverArm=deskew.lever_arm_applied===true;
+    S.timeOffsetMs=offsetS*1000;
+    S.timeSyncApplied=sync.applied===true;
+    S.timeSyncStatus=sync.status||'unavailable';
     S.lidarMeta=meta;
   }else{
     rejectOverlay(`未知叠加源: ${streamRole}`);
@@ -731,7 +750,9 @@ function handleOverlayMeta(meta,streamRole){
   if(S.rgbdMeta&&S.lidarMeta){
     setStatus(true,'RGB-D + LiDAR 实时融合');
     reportParent({event:'overlay-meta',online:true,status:S.extrinsic.status,
-      sha256:S.extrinsic.sha256,frame:'camera_color_optical_frame',units:'metres'});
+      sha256:S.extrinsic.sha256,frame:'camera_color_optical_frame',units:'metres',
+      deskew:S.deskewMode,timeOffsetMs:S.timeOffsetMs,
+      timeSyncApplied:S.timeSyncApplied});
   }
 }
 function handlePacket(buf,streamRole='single'){
@@ -747,7 +768,7 @@ function handlePacket(buf,streamRole='single'){
       S.nativeCount=0;S.fpsP=0;S.lastP=0;
       renderCalib(S.meta.calib);
       const hasCalib=!!S.meta.calib;
-      document.querySelectorAll('#nav button[data-p="calib"],#nav button[data-p="todo"]')
+      document.querySelectorAll('#nav button[data-p="calib"],#nav button[data-p="reference"]')
         .forEach(b=>b.style.display=hasCalib?"":"none");
       if(!hasCalib&&!$("page-live").classList.contains("on"))
         document.querySelector('#nav button[data-p="live"]').click();
@@ -791,6 +812,8 @@ function handlePacket(buf,streamRole='single'){
       if(OVERLAY&&streamRole!=='rgbd')rejectOverlay('非 RGB-D 后端发来了深度帧');
       // 头 24 字节: type(1) pad(3) w(2) h(2) seq(4) t(8) scale(4)
       const w=dv.getUint16(4),h=dv.getUint16(6),sc=dv.getFloat32(20);
+      const stamp=dv.getFloat64(12,false); // network byte order (big-endian)
+      if(OVERLAY&&Number.isFinite(stamp))S.depthStamp=stamp;
       const u16=new Uint16Array(buf,24,w*h);
       S.dw=w;S.dh=h;S.scale=sc;S.hasD=true;
       gl.bindTexture(gl.TEXTURE_2D,texD);
@@ -834,6 +857,8 @@ function handlePacket(buf,streamRole='single'){
         setStatus(false,"点云包头不完整");return;
       }
       const flags=dv.getUint8(1),n=dv.getUint32(4);
+      const stamp=dv.getFloat64(12,false); // network byte order (big-endian)
+      if(OVERLAY&&Number.isFinite(stamp))S.lidarStamp=stamp;
       if((flags&~3)!==0||n>2000000){
         setStatus(false,`点云包参数非法 flags=${flags} count=${n}`);return;
       }
@@ -1162,9 +1187,23 @@ function frame(){
     const rgbdStride=+$("rgbdStride").value,lidarStride=+$("lidarStride").value;
     const rgbdShown=S.dw?Math.floor(S.dw/rgbdStride)*Math.floor(S.dh/rgbdStride):0;
     const lidarShown=Math.ceil(S.nativeCount/lidarStride);
+    const frameDeltaMs=(Number.isFinite(S.depthStamp)&&Number.isFinite(S.lidarStamp))
+      ?(S.lidarStamp-S.depthStamp)*1000:null;
+    const frameDeltaText=frameDeltaMs==null?'等待两路帧':
+      `${frameDeltaMs>=0?'+':''}${frameDeltaMs.toFixed(3)} ms`;
+    const deskewText=S.deskewMode==='rotation_only'
+      ?(S.deskewLeverArm
+        ?`旋转 deskew（含 IMU 杠杆臂） → ${escHtml(S.deskewReference||'scan_end')} · 不含平台平移`
+        :`旋转 deskew → ${escHtml(S.deskewReference||'scan_end')} · 未应用杠杆臂 · 不含平台平移`)
+      :S.deskewMode==='off'?'旋转 deskew 已关闭 · 不含平台平移':
+       'deskew 不可用 · 不含平台平移';
+    const syncLabel=S.timeSyncApplied?'已应用时移':'未应用时移';
     $("hud").innerHTML=
       `RGB-D <b>${S.fpsD.toFixed(1)}</b> fps · 显示 <b>${rgbdShown.toLocaleString()}</b> / ${S.dw?S.dw*S.dh:0}<br>`+
       `LiDAR <b>${S.fpsP.toFixed(1)}</b> fps · 显示 <b>${lidarShown.toLocaleString()}</b> / ${S.nativeCount.toLocaleString()}<br>`+
+      `${deskewText}<br>`+
+      `${syncLabel} <b>${S.timeOffsetMs>=0?'+':''}${S.timeOffsetMs.toFixed(3)} ms</b><br>`+
+      `最新帧 Δt(L−D) <b>${frameDeltaText}</b><br>`+
       `frame <b>camera_color_optical_frame</b> · 单位 <b>m</b><br>`+
       `<span style="color:${label==='DRAFT'?'var(--err)':label==='当前 RIG'?'var(--accent)':'var(--ok)'}">${label} · 雷视融合</span><br>`+
       `<span style="color:var(--dim)">双源实时点流 · 当前 rig 外参</span>`;

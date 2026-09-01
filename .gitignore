@@ -6,7 +6,15 @@ data/*_frames/
 data/**/*.bag
 data/**/*.db3
 data/**/*.mcap
+data/lidar_imu_timesync_*/
+data/mid360s_imu_intrinsic_*/
+data/mid360s_imu_intrinsic_*_analysis*.json
+data/mid360s_imu_pipeline/
 logs/
+# ROS 2 colcon workspace products
+build/
+install/
+log/
 # 上游 Kalibr 源码(用 Docker 构建,见 kalibr.sh)
 kalibr/
 # 运行时产物

@@ -36,6 +36,15 @@ ROOT = os.path.dirname(HERE)
 EXTRINSIC_RESULT = os.path.join(ROOT, 'results', 'mid360s_d435i_extrinsic.json')
 EXTRINSIC_TASK_ID = 'mid360s_d435i_ext'
 EXTRINSIC_EQUATION = 'p_camera = T_camera_lidar * p_lidar'
+TIMESYNC_RESULT = os.path.join(ROOT, 'results', 'mid360s_d435i_timesync.json')
+TIMESYNC_LOCAL_SCHEMA = 'd435i_calib/lidar_camera_timesync_operational/v1'
+TIMESYNC_EQUATION = (
+    't_d435i_depth = t_livox_scan + '
+    'time_offset_lidar_to_d435_depth_ms / 1000'
+)
+LIDAR_IMU_RESULT = os.path.join(ROOT, 'results', 'mid360s_lidar_imu.json')
+LIDAR_IMU_LOCAL_SCHEMA = 'd435i_calib/mid360s_lidar_imu_operational/v1'
+LIDAR_IMU_EQUATION = 'p_lidar = T_lidar_imu * p_imu'
 
 
 def _strict_json(path):
@@ -243,6 +252,203 @@ def load_extrinsic_preview(draft_path=None, local_path=None):
             'available': False, 'status': 'invalid',
             'reason': str(exc), 'expected_path': os.path.relpath(path, ROOT),
         }
+
+
+def load_timesync_result(path=None, extrinsic_preview=None):
+    """Load this rig's LiDAR-scan -> D435i-depth clock correction.
+
+    The caller always gets a finite ``time_offset_s``.  Missing, malformed or
+    mismatched results fail closed to zero instead of silently applying an
+    offset from another rig or reversing the timestamp equation.
+    """
+    explicit = path is not None
+    selected = (os.path.abspath(os.path.expanduser(path))
+                if explicit else TIMESYNC_RESULT)
+    display_path = (selected if explicit else os.path.relpath(selected, ROOT))
+    fallback = {
+        'available': False,
+        'applied': False,
+        'status': 'missing',
+        'path': display_path,
+        'time_offset_s': 0.0,
+        'time_offset_ms': 0.0,
+        'equation': TIMESYNC_EQUATION,
+    }
+    if not os.path.exists(selected):
+        fallback['reason'] = f'timesync result is not present: {display_path}'
+        return fallback
+    try:
+        with open(selected, 'rb') as stream:
+            raw = stream.read()
+        doc = _strict_json_text(raw.decode('utf-8'))
+        if not isinstance(doc, dict):
+            raise ValueError('JSON root must be an object')
+        if str(doc.get('status', '')).lower() != 'operational':
+            raise ValueError('status must be operational')
+        if doc.get('local_schema') != TIMESYNC_LOCAL_SCHEMA:
+            raise ValueError(
+                f'local_schema must be {TIMESYNC_LOCAL_SCHEMA}')
+        result = doc.get('result')
+        if not isinstance(result, dict):
+            raise ValueError('result must be an object')
+        if result.get('time_offset_lidar_to_d435_depth_convention') != TIMESYNC_EQUATION:
+            raise ValueError(
+                'result.time_offset_lidar_to_d435_depth_convention has the '
+                'wrong direction')
+        offset_ms = result.get('time_offset_lidar_to_d435_depth_ms')
+        if (isinstance(offset_ms, bool) or
+                not isinstance(offset_ms, (int, float)) or
+                not np.isfinite(float(offset_ms))):
+            raise ValueError(
+                'result.time_offset_lidar_to_d435_depth_ms must be finite')
+        offset_ms = float(offset_ms)
+        # A seconds-as-milliseconds mistake would visibly tear the overlay.
+        # This is a format safety bound, not a calibration acceptance gate.
+        if abs(offset_ms) > 1000.0:
+            raise ValueError('depth-clock offset exceeds the 1000 ms safety bound')
+        serials = _device_serials(doc)
+        rig_id = doc.get('rig_id')
+        mount_session_id = doc.get('mount_session_id')
+        if not isinstance(rig_id, str) or not rig_id.strip():
+            raise ValueError('rig_id must be non-empty')
+        if not isinstance(mount_session_id, str) or not mount_session_id.strip():
+            raise ValueError('mount_session_id must be non-empty')
+        rig_id = rig_id.strip()
+        mount_session_id = mount_session_id.strip()
+        if extrinsic_preview and extrinsic_preview.get('available'):
+            expected = extrinsic_preview
+            checks = (
+                ('rig_id', rig_id, expected.get('rig_id')),
+                ('mount_session_id', mount_session_id,
+                 expected.get('mount_session_id')),
+                ('lidar serial', serials['lidar'],
+                 expected.get('lidar_serial')),
+                ('rgbd serial', serials['rgbd'],
+                 expected.get('camera_serial')),
+            )
+            for label, observed, wanted in checks:
+                if observed != wanted:
+                    raise ValueError(
+                        f'timesync {label}={observed!r} does not match '
+                        f'extrinsic {wanted!r}')
+        return {
+            'available': True,
+            'applied': True,
+            'status': 'operational',
+            'path': display_path,
+            'sha256': hashlib.sha256(raw).hexdigest(),
+            'rig_id': rig_id,
+            'mount_session_id': mount_session_id,
+            'lidar_serial': serials['lidar'],
+            'camera_serial': serials['rgbd'],
+            'time_offset_ms': offset_ms,
+            'time_offset_s': offset_ms / 1000.0,
+            'equation': TIMESYNC_EQUATION,
+        }
+    except Exception as exc:
+        fallback['status'] = 'invalid'
+        fallback['reason'] = str(exc)
+        return fallback
+
+
+def load_lidar_imu_result(extrinsic_preview=None):
+    """Load the MID-360S built-in IMU pose used by rotational deskew.
+
+    Identity is the fail-closed fallback: deskew may still use the measured
+    angular velocity, but it must not invent a lever arm from an invalid or
+    differently mounted result.
+    """
+    selected = LIDAR_IMU_RESULT
+    display_path = os.path.relpath(selected, ROOT)
+    fallback = {
+        'available': False,
+        'applied': False,
+        'status': 'missing',
+        'path': display_path,
+        'equation': LIDAR_IMU_EQUATION,
+        'T_lidar_imu': np.eye(4).tolist(),
+    }
+    if not os.path.exists(selected):
+        fallback['reason'] = f'LiDAR-IMU result is not present: {display_path}'
+        return fallback
+    try:
+        with open(selected, 'rb') as stream:
+            raw = stream.read()
+        doc = _strict_json_text(raw.decode('utf-8'))
+        if not isinstance(doc, dict):
+            raise ValueError('JSON root must be an object')
+        if str(doc.get('status', '')).lower() != 'operational':
+            raise ValueError('status must be operational')
+        if doc.get('local_schema') != LIDAR_IMU_LOCAL_SCHEMA:
+            raise ValueError(f'local_schema must be {LIDAR_IMU_LOCAL_SCHEMA}')
+        frame = doc.get('frame_convention')
+        if (not isinstance(frame, dict) or
+                frame.get('from') != 'mid360s_imu_frame' or
+                frame.get('to') != 'livox_frame' or
+                frame.get('equation') != LIDAR_IMU_EQUATION):
+            raise ValueError(
+                'frame_convention must declare mid360s_imu_frame -> '
+                f'livox_frame and "{LIDAR_IMU_EQUATION}"')
+        result = doc.get('result')
+        matrix = np.asarray(
+            result.get('T_lidar_imu') if isinstance(result, dict) else None,
+            dtype=np.float64)
+        if matrix.shape != (4, 4) or not np.isfinite(matrix).all():
+            raise ValueError('result.T_lidar_imu must be a finite 4x4 matrix')
+        if not np.allclose(matrix[3], [0, 0, 0, 1], rtol=0, atol=1e-10):
+            raise ValueError('T_lidar_imu has an invalid homogeneous row')
+        rotation = matrix[:3, :3]
+        if (not np.allclose(rotation.T @ rotation, np.eye(3), rtol=0, atol=1e-8) or
+                not np.isclose(np.linalg.det(rotation), 1.0, rtol=0, atol=1e-8)):
+            raise ValueError('T_lidar_imu rotation is not proper orthonormal')
+        devices = doc.get('devices')
+        if not isinstance(devices, list):
+            raise ValueError('devices must be a list')
+        lidars = [item for item in devices
+                  if isinstance(item, dict) and item.get('role') == 'lidar']
+        if len(lidars) != 1 or len(devices) != 1:
+            raise ValueError('devices must contain exactly one lidar identity')
+        serial = lidars[0].get('serial')
+        if not isinstance(serial, str) or not serial.strip():
+            raise ValueError('lidar serial must be non-empty')
+        serial = serial.strip()
+        rig_id = doc.get('rig_id')
+        mount_session_id = doc.get('mount_session_id')
+        if not isinstance(rig_id, str) or not rig_id.strip():
+            raise ValueError('rig_id must be non-empty')
+        if not isinstance(mount_session_id, str) or not mount_session_id.strip():
+            raise ValueError('mount_session_id must be non-empty')
+        rig_id = rig_id.strip()
+        mount_session_id = mount_session_id.strip()
+        if extrinsic_preview and extrinsic_preview.get('available'):
+            expected = extrinsic_preview
+            checks = (
+                ('rig_id', rig_id, expected.get('rig_id')),
+                ('mount_session_id', mount_session_id,
+                 expected.get('mount_session_id')),
+                ('lidar serial', serial, expected.get('lidar_serial')),
+            )
+            for label, observed, wanted in checks:
+                if observed != wanted:
+                    raise ValueError(
+                        f'LiDAR-IMU {label}={observed!r} does not match '
+                        f'extrinsic {wanted!r}')
+        return {
+            'available': True,
+            'applied': True,
+            'status': 'operational',
+            'path': display_path,
+            'sha256': hashlib.sha256(raw).hexdigest(),
+            'rig_id': rig_id,
+            'mount_session_id': mount_session_id,
+            'lidar_serial': serial,
+            'equation': LIDAR_IMU_EQUATION,
+            'T_lidar_imu': matrix.tolist(),
+        }
+    except Exception as exc:
+        fallback['status'] = 'invalid'
+        fallback['reason'] = str(exc)
+        return fallback
 
 
 def transform_livox_viewer_to_camera_viewer(xyz, transform):
@@ -525,6 +731,43 @@ async def main_async(args):
     hub.wake = asyncio.Event()
     extrinsic_preview = load_extrinsic_preview(
         args.extrinsic_draft, args.extrinsic)
+    timesync_result = {
+        'available': False, 'applied': False, 'status': 'not_requested',
+        'time_offset_s': 0.0, 'time_offset_ms': 0.0,
+        'equation': TIMESYNC_EQUATION,
+    }
+    lidar_imu_result = {
+        'available': False, 'applied': False, 'status': 'not_requested',
+        'equation': LIDAR_IMU_EQUATION, 'T_lidar_imu': np.eye(4).tolist(),
+    }
+    if args.overlay_role == 'lidar':
+        timesync_result = load_timesync_result(
+            args.timesync, extrinsic_preview=extrinsic_preview)
+        lidar_imu_result = load_lidar_imu_result(
+            extrinsic_preview=extrinsic_preview)
+        if args.no_deskew and lidar_imu_result['available']:
+            lidar_imu_result = dict(lidar_imu_result)
+            lidar_imu_result['applied'] = False
+            lidar_imu_result['reason'] = 'deskew was explicitly disabled'
+        if timesync_result['available']:
+            print(
+                f"[timesync] 已应用 {timesync_result['time_offset_ms']:+.6f} ms "
+                f"({TIMESYNC_EQUATION})  <- {timesync_result['path']}")
+        else:
+            print(
+                '[timesync] 未应用时移，安全回退到 offset=0.000000 ms: '
+                f"{timesync_result.get('reason', 'result unavailable')}")
+        if lidar_imu_result['available'] and not args.no_deskew:
+            lever_mm = np.asarray(
+                lidar_imu_result['T_lidar_imu'], dtype=np.float64)[:3, 3] * 1000.0
+            print('[LiDAR-IMU] 已应用 T_lidar_imu，IMU 杠杆臂 '
+                  f'[{lever_mm[0]:+.2f}, {lever_mm[1]:+.2f}, '
+                  f'{lever_mm[2]:+.2f}] mm')
+        elif lidar_imu_result['available']:
+            print('[LiDAR-IMU] 结果已载入；deskew 已关闭，杠杆臂未应用')
+        else:
+            print('[LiDAR-IMU] 未应用杠杆臂，安全回退到 identity: '
+                  f"{lidar_imu_result.get('reason', 'result unavailable')}")
 
     if args.source == 'd435i':
         from sources.d435i import D435i
@@ -553,7 +796,14 @@ async def main_async(args):
         from sources.ros2_points import Ros2Points
         src = Ros2Points(hub.on_frame, topic=args.topic,
                          max_points=args.max_points, axes=args.axes,
-                         topic_timeout=args.topic_timeout)
+                         topic_timeout=args.topic_timeout,
+                         deskew=not args.no_deskew,
+                         time_offset_s=timesync_result['time_offset_s'],
+                         T_lidar_imu=lidar_imu_result['T_lidar_imu'])
+        if args.overlay_role == 'lidar':
+            print('[deskew] ' + ('旋转补偿已开启（Livox offset_time + IMU '
+                                  '→ scan_end）'
+                                if not args.no_deskew else '已显式关闭'))
     else:
         print(f'未知源 {args.source}'); sys.exit(1)
 
@@ -629,6 +879,9 @@ async def main_async(args):
                     rig_id=extrinsic_preview['rig_id'],
                     mount_session_id=extrinsic_preview['mount_session_id'],
                 )
+            hub.meta = dict(hub.meta)
+            hub.meta['timesync'] = timesync_result
+            hub.meta['lidar_imu'] = lidar_imu_result
 
         if args.overlay_role:
             hub.meta = dict(hub.meta)
@@ -639,8 +892,7 @@ async def main_async(args):
             try:
                 hub.meta_calib = calib_summary.collect()
                 counts = hub.meta_calib['counts']
-                print(f"[标定] 载入 {counts['done']}/{counts['total']} 项已有结果,"
-                      f"{counts['pending']} 项规划中,{counts['rework']} 项待更新")
+                print(f"[标定] 载入 {counts['done']} 项标定结果")
             except Exception as e:
                 hub.meta_calib = None
                 print(f"[标定] 汇总失败: {e}")
@@ -717,6 +969,11 @@ def main():
     ap.add_argument('--extrinsic',
                     help='本地 operational 外参 JSON；仅校验 SE(3)、方向、'
                          '坐标系与设备身份，不依赖本仓库验收注册表')
+    ap.add_argument('--timesync',
+                    help='显式指定 operational 雷视时移 JSON；仅用于 '
+                         '--overlay-role lidar。省略时自动读取当前 rig 结果')
+    ap.add_argument('--no-deskew', action='store_true',
+                    help='显式关闭 Livox 基于 offset_time + IMU 的旋转 deskew')
     args = ap.parse_args()
     if args.source_timeout <= 0:
         ap.error('--source-timeout must be > 0')
@@ -726,6 +983,10 @@ def main():
         ap.error('choose only one of --extrinsic and --extrinsic-draft')
     if (args.extrinsic_draft or args.extrinsic) and not args.overlay_role:
         ap.error('--extrinsic/--extrinsic-draft is only valid with --overlay-role')
+    if args.timesync and args.overlay_role != 'lidar':
+        ap.error('--timesync is only valid with --overlay-role lidar')
+    if args.no_deskew and args.source != 'ros2':
+        ap.error('--no-deskew is only valid with --source ros2')
     if args.list_topics:
         from sources.ros2_points import discover_point_topics
         topics = discover_point_topics(timeout=args.topic_timeout)

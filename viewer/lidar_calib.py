@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""MID-360S calibration task registry and lifecycle projection.
+"""MID-360S current-result registry and optional validation projection.
 
-Results have two explicit lanes.  A provenance-bound ``operational`` artifact
-is exposed as LOCAL when its device and mount identities match the current rig;
-an independent acceptance block promotes the same task to VALIDATED.  Both are
-results, while missing or malformed artifacts remain planning items
-(``pending`` or ``rework``).
+The documented rig is represented by provenance-bound ``operational``
+artifacts, exposed as LOCAL when their device and mount identities match.
+Reproducers may additionally supply an independent acceptance block, exposed as
+the optional strict VALIDATED tier.  Both are result lanes; missing or malformed
+artifacts are lifecycle/integrity records, not future work for the current rig.
 
-Required VALIDATED result envelope (JSON)::
+Optional strict VALIDATED result envelope (JSON)::
 
     {
       "schema_version": 1,
@@ -30,7 +30,8 @@ Required VALIDATED result envelope (JSON)::
 
 ``summary`` is optional; when absent, scalar values from ``result`` are shown.
 The provenance and frame fields are deliberately mandatory so a result from a
-different unit/rig, or an ambiguous naked 4x4 matrix, cannot silently graduate.
+different unit/rig, or an ambiguous naked 4x4 matrix, cannot silently enter the
+strict validation tier.
 """
 from __future__ import annotations
 
@@ -107,17 +108,72 @@ TASKS = [
                    'high', '没有留出验收，错误外参和错误时移可能在同一优化里互相补偿而静默通过。')),
 ]
 
-# The viewer exposes this rig's current LiDAR deliverable.  The larger catalog
-# remains separately addressable for applications that activate those stages.
-ACTIVE_TASK_IDS = ('mid360s_d435i_ext',)
+# Only these four artifacts describe the currently mounted rig.  Every other
+# entry in TASKS remains a reusable method reference for another device or
+# deployment; it is not projected as this rig's unfinished work.
+ACTIVE_TASK_IDS = (
+    'mid360s_d435i_ext',
+    'mid360s_imu',
+    'mid360s_lidar_imu',
+    'mid360s_d435i_td',
+)
 
-# The canonical result is the independent-acceptance VALIDATED lane.  The
-# sibling ``.local.json`` is the active, device/mount-bound LOCAL lane.
+# The device/mount-bound ``.local.json`` is the documented current-rig result.
+# An independent-acceptance VALIDATED artifact is an optional stricter lane.
 LOCAL_EXTRINSIC_RESULT = 'results/mid360s_d435i_extrinsic.local.json'
 CURRENT_RIG_MANIFEST = 'data/lidar_camera_extrinsic/capture_session.json'
 LOCAL_EXTRINSIC_SCHEMA = 'd435i_calib/lidar_camera_extrinsic_local/v1'
 CURRENT_RIG_SCHEMA = 'd435i_calib/lidar_camera_mount_session/v1'
 EXTRINSIC_EQUATION = 'p_camera = T_camera_lidar * p_lidar'
+MID360S_IMU_OPERATIONAL_SCHEMA = 'd435i_calib/mid360s_imu_operational/v1'
+MID360S_IMU_ACCEL_EQUATION = (
+    'a_corrected_ms2 = T_misalignment * diag(accel_scale) * '
+    '(9.80665 * a_raw_g - accel_bias_ms2)')
+LIDAR_IMU_OPERATIONAL_SCHEMA = 'd435i_calib/mid360s_lidar_imu_operational/v1'
+TIMESYNC_OPERATIONAL_SCHEMA = 'd435i_calib/lidar_camera_timesync_operational/v1'
+LIDAR_IMU_EQUATION = 'p_lidar = T_lidar_imu * p_imu'
+LIDAR_IMU_TIME_CONVENTION = (
+    't_imu = t_lidar + time_offset_lidar_to_imu_ms / 1000')
+IMU_CLOCK_CONVENTION = (
+    't_d435i_imu = t_livox_imu + '
+    'imu_clock_offset_livox_to_d435i_ms / 1000')
+D435I_DEPTH_IMU_CONVENTION = (
+    't_d435i_imu = t_d435i_depth + '
+    'd435i_depth_to_imu_timeshift_ms / 1000')
+LIDAR_DEPTH_TIME_CONVENTION = (
+    't_d435i_depth = t_livox_scan + '
+    'time_offset_lidar_to_d435_depth_ms / 1000')
+
+
+_REFERENCE_APPLIES = {
+    'mid360s_health': (
+        '新 MID-360S 单机验收、特殊材质环境，或疑似测距/覆盖异常时'),
+    'mid360s_imu': (
+        '将 MID-360S 内置 IMU 用于 LIO/纯惯导，或驱动的加速度单位未确认时'),
+    'rig_base': (
+        '将雷视组件安装到机器人并需要输出 base_link 位姿时'),
+    'mid360s_validation': (
+        '其他设备或复现者需要用独立留出数据做完整复现性验收时'),
+}
+
+_REFERENCE_OUTPUTS = {
+    'mid360s_health': '测距、覆盖率与冷热稳态健康验收报告',
+    'mid360s_imu': 'MID IMU 的 SI 转换、噪声与内参参数',
+    'rig_base': 'T_base_lidar / T_base_camera（含明确 frame 方向）',
+    'mid360s_validation': '独立留出集闭环验收报告与输入哈希',
+}
+
+
+def lidar_references():
+    """Return inactive catalog entries as method references, never debt."""
+    return [
+        dict(
+            id=task['id'], device=task['device'], name=task['name'],
+            applies=_REFERENCE_APPLIES[task['id']], why=task['why'],
+            how=task['how'], output=_REFERENCE_OUTPUTS[task['id']],
+            cost=f"参考工作量：{task['cost']}", slam=task['slam'])
+        for task in TASKS if task['id'] not in ACTIVE_TASK_IDS
+    ]
 
 
 def _gate(field, op, limit, label, unit=''):
@@ -710,6 +766,287 @@ def _validate_operational_extrinsic(task, doc, current_rig):
     return ('pending', list(dict.fromkeys(missing))) if missing else ('done', [])
 
 
+def _validate_operational_aux(task, doc, current_rig):
+    """Validate current-rig operational artifacts outside camera extrinsics.
+
+    These artifacts deliberately do not inherit the generic VALIDATED gates:
+    they record the result usable by this exact device/mount combination.  The
+    generic acceptance protocol remains available through ``lidar_references``.
+    """
+    schemas = {
+        'mid360s_imu': MID360S_IMU_OPERATIONAL_SCHEMA,
+        'mid360s_lidar_imu': LIDAR_IMU_OPERATIONAL_SCHEMA,
+        'mid360s_d435i_td': TIMESYNC_OPERATIONAL_SCHEMA,
+    }
+    missing = []
+    if task['id'] not in schemas:
+        return 'pending', ['该任务没有 current-rig operational schema']
+    if doc.get('schema_version') != 1:
+        missing.append('schema_version 必须为 1')
+    if doc.get('task_id') != task['id']:
+        missing.append(f"task_id 必须为 {task['id']}")
+    if str(doc.get('status', '')).lower() != 'operational':
+        missing.append('LOCAL status 必须为 operational')
+    if doc.get('local_schema') != schemas[task['id']]:
+        missing.append(f"local_schema 必须为 {schemas[task['id']]}")
+
+    expected_roles = set(SPECS[task['id']]['roles'])
+    devices = doc.get('devices')
+    if not isinstance(devices, list) or len(devices) != len(expected_roles):
+        missing.append('devices 必须恰好覆盖: ' + ','.join(sorted(expected_roles)))
+        devices = []
+    by_role = {}
+    for i, device in enumerate(devices):
+        if not isinstance(device, dict):
+            missing.append(f'devices[{i}] 必须为 object')
+            continue
+        role = device.get('role')
+        if role not in expected_roles or role in by_role:
+            missing.append('devices 角色缺失、重复或超出任务范围')
+            continue
+        by_role[role] = device
+        model, serial = device.get('model'), device.get('serial')
+        if (role in _MODEL_PATTERNS and
+                (not isinstance(model, str) or
+                 not _MODEL_PATTERNS[role].search(model))):
+            missing.append(f'devices[{i}].model 与 {role} 不匹配')
+        if not isinstance(serial, str) or not serial.strip():
+            missing.append(f'devices[{i}].serial 缺失')
+    if set(by_role) != expected_roles:
+        missing.append('devices 必须恰好覆盖: ' + ','.join(sorted(expected_roles)))
+
+    for field in ('rig_id', 'mount_session_id'):
+        if not isinstance(doc.get(field), str) or not doc[field].strip():
+            missing.append(f'{field} 缺失')
+    if current_rig:
+        for field in ('rig_id', 'mount_session_id'):
+            if doc.get(field) != current_rig[field]:
+                missing.append(f'{field} 与当前 rig 清单不一致')
+        serials = {
+            'lidar': current_rig['mid360s_serial'],
+            'rgbd': current_rig['d435i_serial'],
+        }
+        for role in expected_roles:
+            if role in by_role and by_role[role].get('serial') != serials[role]:
+                missing.append(f'{role} serial 与当前 rig 清单不一致')
+
+    if not _valid_utc(doc.get('created_utc')):
+        missing.append('created_utc 必须是 UTC ISO-8601 时间')
+    if not isinstance(doc.get('method'), str) or len(doc['method'].strip()) < 4:
+        missing.append('method 缺失或过短')
+
+    sources = doc.get('source_data')
+    if not isinstance(sources, list) or not sources:
+        missing.append('source_data 必须是非空列表')
+        sources = []
+    seen = set()
+    for i, source in enumerate(sources):
+        if not isinstance(source, dict):
+            missing.append(f'source_data[{i}] 必须为 object')
+            continue
+        role, path = source.get('role'), source.get('path')
+        digest = str(source.get('sha256', ''))
+        if not isinstance(role, str) or not role.strip():
+            missing.append(f'source_data[{i}].role 缺失')
+        if not isinstance(path, str) or not path.strip():
+            missing.append(f'source_data[{i}].path 缺失')
+        if not _HASH_RE.fullmatch(digest):
+            missing.append(f'source_data[{i}].sha256 必须为 64 位十六进制')
+        key = (role, path, digest.lower())
+        if key in seen:
+            missing.append(f'source_data[{i}] 重复')
+        seen.add(key)
+
+    result = doc.get('result')
+    if not isinstance(result, dict) or not result:
+        missing.append('result 必须是非空 object')
+        result = {}
+    elif not _finite_scalars(result):
+        missing.append('result 含 NaN/Inf')
+    frames = doc.get('frame_convention')
+
+    if task['id'] == 'mid360s_imu':
+        if (not isinstance(frames, dict) or
+                frames.get('frame') != 'mid360s_imu_frame' or
+                frames.get('accel_equation') != MID360S_IMU_ACCEL_EQUATION):
+            missing.append(
+                'frame_convention 必须声明 frame=mid360s_imu_frame '
+                f'且 accel_equation={MID360S_IMU_ACCEL_EQUATION}')
+        literals = {
+            'accel_input_unit': 'g',
+            'accel_output_unit': 'm/s^2',
+            'noise_density_method': 'short_window_white_noise',
+            'allan_characterization': 'not_performed',
+        }
+        for field, expected in literals.items():
+            if result.get(field) != expected:
+                missing.append(f'result.{field} 必须为 {expected}')
+        unit_scale = result.get('accel_unit_scale_ms2_per_g')
+        if (not _number(unit_scale) or
+                not math.isclose(float(unit_scale), 9.80665,
+                                 rel_tol=0.0, abs_tol=1e-9)):
+            missing.append(
+                'result.accel_unit_scale_ms2_per_g 必须为 9.80665')
+        vectors = {
+            'accel_bias_ms2': 'vector3',
+            'accel_scale': 'positive_vector3',
+            'accel_misalignment_rad': 'vector3',
+            'gyro_bias_rad_s': 'vector3',
+        }
+        for field, kind in vectors.items():
+            if not _valid_kind(result.get(field), kind):
+                missing.append(f'result.{field} 必须是有限三维向量')
+        misalignment = result.get('accel_misalignment_rad')
+        scale = result.get('accel_scale')
+        expected_t = expected_m = None
+        if (_valid_kind(misalignment, 'vector3') and
+                _valid_kind(scale, 'positive_vector3')):
+            ayz, azy, azx = (float(value) for value in misalignment)
+            expected_t = [[1.0, -ayz, azy],
+                          [0.0, 1.0, -azx],
+                          [0.0, 0.0, 1.0]]
+            expected_m = [[expected_t[row][col] * float(scale[col])
+                           for col in range(3)] for row in range(3)]
+
+        def valid_matrix3(value):
+            return (isinstance(value, list) and len(value) == 3 and
+                    all(isinstance(row, list) and len(row) == 3
+                        for row in value) and
+                    all(_number(item) for row in value for item in row))
+
+        for field, expected in (
+                ('T_misalignment', expected_t),
+                ('accel_correction_matrix', expected_m)):
+            value = result.get(field)
+            if not valid_matrix3(value):
+                missing.append(f'result.{field} 必须是有限 3x3 矩阵')
+            elif expected is not None and any(
+                    not math.isclose(float(value[row][col]), expected[row][col],
+                                     rel_tol=1e-9, abs_tol=1e-9)
+                    for row in range(3) for col in range(3)):
+                missing.append(
+                    f'result.{field} 与 accel_scale/accel_misalignment_rad '
+                    '及上三角小角度模型不一致')
+        counts = {'pose_count': 13, 'fit_pose_count': 12,
+                  'holdout_pose_count': 1}
+        for field, minimum in counts.items():
+            value = result.get(field)
+            if not _valid_kind(value, 'integer') or value < minimum:
+                missing.append(f'result.{field} 必须是 >= {minimum} 的整数')
+        if all(_valid_kind(result.get(field), 'integer')
+               for field in counts) and result['pose_count'] != (
+                   result['fit_pose_count'] + result['holdout_pose_count']):
+            missing.append(
+                'result.pose_count 必须等于 fit_pose_count + '
+                'holdout_pose_count')
+        nonnegative = (
+            'accel_fit_residual_rms_ms2',
+            'accel_holdout_residual_rms_ms2',
+            'gyro_static_residual_rms_rad_s',
+        )
+        for field in nonnegative:
+            value = result.get(field)
+            if not _number(value) or value < 0:
+                missing.append(f'result.{field} 必须是非负有限数值')
+        positive_scalars = (
+            'gravity_reference_ms2',
+            'imu_sample_rate_hz',
+            'noise_window_duration_s',
+        )
+        for field in positive_scalars:
+            if not _valid_kind(result.get(field), 'positive'):
+                missing.append(f'result.{field} 必须是正的有限数值')
+        for field in ('accel_noise_density_ms2_sqrt_hz',
+                      'gyro_noise_density_rad_s_sqrt_hz'):
+            if not _valid_kind(result.get(field), 'positive_vector3'):
+                missing.append(f'result.{field} 必须是正的有限三维向量')
+        if ('allan_duration_h' in result and
+                (not _number(result['allan_duration_h']) or
+                 float(result['allan_duration_h']) != 0.0)):
+            missing.append(
+                'result.allan_duration_h 必须缺省或为 0；'
+                '短窗白噪声估计不能冒充 2 h Allan')
+        source_roles = {
+            source.get('role') for source in sources
+            if isinstance(source, dict)
+        }
+        if 'operational_capture' not in source_roles:
+            missing.append(
+                'source_data 必须包含 operational_capture 及其 SHA-256')
+    elif task['id'] == 'mid360s_lidar_imu':
+        if (not isinstance(frames, dict) or
+                frames.get('from') != 'mid360s_imu_frame' or
+                frames.get('to') != 'livox_frame' or
+                frames.get('equation') != LIDAR_IMU_EQUATION):
+            missing.append(
+                'frame_convention 必须声明 mid360s_imu_frame → '
+                f'livox_frame 且 equation={LIDAR_IMU_EQUATION}')
+        if not _matrix4(result.get('T_lidar_imu')):
+            missing.append('result.T_lidar_imu 必须为有限刚体 4x4 变换')
+        if not _number(result.get('time_offset_lidar_to_imu_ms')):
+            missing.append('result.time_offset_lidar_to_imu_ms 必须为有限数值')
+        if result.get('time_offset_convention') != LIDAR_IMU_TIME_CONVENTION:
+            missing.append(
+                f'result.time_offset_convention 必须为 {LIDAR_IMU_TIME_CONVENTION}')
+        if result.get('deskew_mode') != 'rotation_only':
+            missing.append('result.deskew_mode 必须为 rotation_only')
+        if result.get('per_point_time_field') != 'offset_time':
+            missing.append('result.per_point_time_field 必须为 offset_time')
+        if not _valid_kind(result.get('offset_time_valid_ratio'), 'ratio'):
+            missing.append('result.offset_time_valid_ratio 必须是 [0,1] 比例')
+    else:
+        if (not isinstance(frames, dict) or
+                frames.get('from') != 'livox_scan' or
+                frames.get('to') != 'd435i_depth' or
+                frames.get('equation') != LIDAR_DEPTH_TIME_CONVENTION):
+            missing.append(
+                'frame_convention 必须声明 livox_scan → d435i_depth '
+                f'且 equation={LIDAR_DEPTH_TIME_CONVENTION}')
+        numeric = (
+            'imu_clock_offset_livox_to_d435i_ms',
+            'd435i_depth_to_imu_timeshift_ms',
+            'time_offset_lidar_to_d435_depth_ms',
+            'residual_rmse_rad_s',
+        )
+        for field in numeric:
+            if not _number(result.get(field)):
+                missing.append(f'result.{field} 必须为有限数值')
+        if (_number(result.get('residual_rmse_rad_s')) and
+                result['residual_rmse_rad_s'] < 0):
+            missing.append('result.residual_rmse_rad_s 不得为负')
+        segments = result.get('segment_offsets_ms')
+        if (not isinstance(segments, list) or len(segments) < 2 or
+                not all(_number(value) for value in segments)):
+            missing.append('result.segment_offsets_ms 必须是至少两段有限数值')
+        matched = result.get('matched_samples')
+        if not _valid_kind(matched, 'integer') or matched < 1:
+            missing.append('result.matched_samples 必须为正整数')
+        conventions = {
+            'imu_clock_offset_convention': IMU_CLOCK_CONVENTION,
+            'd435i_depth_to_imu_timeshift_convention':
+                D435I_DEPTH_IMU_CONVENTION,
+            'time_offset_lidar_to_d435_depth_convention':
+                LIDAR_DEPTH_TIME_CONVENTION,
+        }
+        for field, expected in conventions.items():
+            if result.get(field) != expected:
+                missing.append(f'result.{field} 必须为 {expected}')
+        values = [result.get(field) for field in numeric[:3]]
+        if all(_number(value) for value in values):
+            composed = float(values[0]) - float(values[1])
+            if not math.isclose(float(values[2]), composed,
+                                rel_tol=1e-9, abs_tol=1e-6):
+                missing.append(
+                    'result.time_offset_lidar_to_d435_depth_ms '
+                    '必须等于 IMU 时钟偏移减去 D435i depth→IMU 时移')
+
+    if doc.get('summary') is not None and (
+            not isinstance(doc['summary'], (dict, list)) or
+            not _finite_scalars(doc['summary'])):
+        missing.append('summary 必须是有限值组成的 object/list')
+    return ('pending', list(dict.fromkeys(missing))) if missing else ('done', [])
+
+
 def _completion_text(task):
     spec = SPECS[task['id']]
     return '；'.join(
@@ -729,8 +1066,22 @@ def _todo(task, lifecycle='pending', progress='尚无结果产物', checks=None)
 def _stage(task, doc, digest, source=None, quality='ok'):
     is_local = quality == 'local'
     if is_local:
+        defaults = {
+            'mid360s_d435i_ext': (
+                'LOCAL · 当前 rig operational 外参；五场景稠密配准与'
+                '多起点一致性已完成'),
+            'mid360s_imu': (
+                'LOCAL · 当前 MID-360S 的 SI 单位转换、加速度计'
+                '内参、陀螺零偏与短窗白噪声已固结'),
+            'mid360s_lidar_imu': (
+                'LOCAL · 当前 rig 的 LiDAR–内置 IMU 几何与旋转 deskew '
+                '参数已固结'),
+            'mid360s_d435i_td': (
+                'LOCAL · 当前 rig 的 LiDAR–D435i 常数时间偏移已固结'),
+        }
         note = str(doc.get('note') or
-                   f"LOCAL · 当前 rig operational 外参；五场景稠密配准与多起点一致性已完成；方法: {doc.get('method', '—')}。")
+                   f"{defaults.get(task['id'], 'LOCAL · 当前 rig operational 结果')}；"
+                   f"方法: {doc.get('method', '—')}。")
         rows = [['质量', 'LOCAL'], ['状态', 'operational · 当前 rig']] + _rows(doc)
         checks = []
     else:
@@ -763,12 +1114,25 @@ def collect_lidar(root):
                     raise ValueError('顶层必须是 JSON object')
                 rec['doc'] = doc
                 rec['digest'] = hashlib.sha256(raw).hexdigest()
-                rec['lifecycle'], rec['reasons'] = _validate(task, doc)
+                if (task['id'] in ('mid360s_imu', 'mid360s_lidar_imu',
+                                   'mid360s_d435i_td')
+                        and str(doc.get('status', '')).lower() == 'operational'):
+                    current_rig, rig_reasons = _current_rig(root)
+                    lifecycle, reasons = _validate_operational_aux(
+                        task, doc, current_rig)
+                    rec['reasons'] = rig_reasons + reasons
+                    rec['lifecycle'] = (
+                        'done' if lifecycle == 'done' and not rec['reasons']
+                        else 'pending')
+                    rec['quality'] = 'local'
+                else:
+                    rec['lifecycle'], rec['reasons'] = _validate(task, doc)
             except Exception as exc:
                 rec['reasons'] = [f'产物不可解析: {type(exc).__name__}: {exc}']
 
-        # Canonical VALIDATED output takes precedence.  Otherwise a matching
-        # current-rig LOCAL artifact fills the result card as operational.
+        # When present, an optional VALIDATED artifact is displayed at its
+        # stricter evidence tier.  Otherwise the matching current-rig LOCAL
+        # artifact fills the result card as the completed operational result.
         if task['id'] == 'mid360s_d435i_ext' and rec['lifecycle'] != 'done':
             local_path = os.path.join(root, LOCAL_EXTRINSIC_RESULT)
             if os.path.exists(local_path):
@@ -821,6 +1185,10 @@ def collect_lidar(root):
         changed = False
         for task_id, rec in records.items():
             if rec['lifecycle'] != 'done':
+                continue
+            # A current-rig operational artifact is intentionally self-bound
+            # and does not claim the catalog's independent VALIDATED tier.
+            if rec['quality'] == 'local':
                 continue
             blockers = [x for x in SPECS[task_id]['depends_on']
                         if records[x]['lifecycle'] != 'done']

@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "task_id": "mid360s_d435i_td",
+  "status": "operational",
+  "local_schema": "d435i_calib/lidar_camera_timesync_operational/v1",
+  "created_utc": "2026-08-31T23:20:31Z",
+  "rig_id": "mid360s-d435i-01",
+  "mount_session_id": "a56af70a-da0b-49d2-bc84-540c37cb3b05",
+  "devices": [
+    {
+      "role": "lidar",
+      "model": "Livox MID-360S",
+      "serial": "ARMDN6B0030122"
+    },
+    {
+      "role": "rgbd",
+      "model": "Intel RealSense D435i",
+      "serial": "947122070908"
+    }
+  ],
+  "method": "Rigid-rig dual-gyroscope correlation with proper-rotation and constant-bias fit; composed with the frozen D435i depth-camera to IMU shift",
+  "frame_convention": {
+    "from": "livox_scan",
+    "to": "d435i_depth",
+    "equation": "t_d435i_depth = t_livox_scan + time_offset_lidar_to_d435_depth_ms / 1000"
+  },
+  "source_data": [
+    {
+      "role": "dynamic_fit",
+      "path": "data/lidar_imu_timesync_20260901_run1",
+      "sha256": "1528c7c1a62d9176ba6d2d3f228a1b2fef0092342194963119c0994bb522131c",
+      "hash_scheme": "sha256-tree-v1(length-prefixed relative path, size, bytes)"
+    },
+    {
+      "role": "d435i_camera_imu_calibration",
+      "path": "data/camimu_corr-camchain-imucam.yaml",
+      "sha256": "27e91108f48e8dc2a9bcc4fe36212e167d893c0201be427c2628762d7de039de"
+    }
+  ],
+  "result": {
+    "imu_clock_offset_livox_to_d435i_ms": -1.94,
+    "imu_clock_offset_convention": "t_d435i_imu = t_livox_imu + imu_clock_offset_livox_to_d435i_ms / 1000",
+    "d435i_depth_to_imu_timeshift_ms": 4.049415918681975,
+    "d435i_depth_to_imu_timeshift_convention": "t_d435i_imu = t_d435i_depth + d435i_depth_to_imu_timeshift_ms / 1000",
+    "time_offset_lidar_to_d435_depth_ms": -5.989415918681975,
+    "time_offset_lidar_to_d435_depth_convention": "t_d435i_depth = t_livox_scan + time_offset_lidar_to_d435_depth_ms / 1000",
+    "segment_offsets_ms": [
+      -1.91,
+      -2.62,
+      -1.56
+    ],
+    "segment_offset_range_ms": 1.06,
+    "segment_offset_std_ms": 0.44098374875574126,
+    "residual_rmse_rad_s": 0.018362308871288674,
+    "residual_median_rad_s": 0.008964477980623803,
+    "residual_p95_rad_s": 0.03617903533634701,
+    "matched_samples": 12910,
+    "record_duration_s": 64.6577,
+    "R_d435gyro_livoximu": [
+      [
+        0.9999943616333804,
+        -0.002085763720865323,
+        -0.0026317847837434086
+      ],
+      [
+        -0.002000268661250179,
+        0.25953920357533766,
+        -0.9657305010885611
+      ],
+      [
+        0.0026973369700581742,
+        0.9657303202225662,
+        0.25953356811035033
+      ]
+    ],
+    "bias_d435gyro_minus_rotated_livoximu_rad_s": [
+      0.0031060724646972473,
+      -0.0020786964460218476,
+      -0.0014655971547164436
+    ]
+  },
+  "summary": {
+    "quality": "OPERATIONAL · current rigid rig",
+    "viewer_timestamp_equation": "t_depth = t_livox_scan - 5.989 ms",
+    "dual_gyro_offset": "-1.940 ms",
+    "three_segment_refits": "-1.910 / -2.620 / -1.560 ms",
+    "fit_residual": "RMSE 0.01836 rad/s; median 0.00896 rad/s; P95 0.03618 rad/s",
+    "matched_samples": 12910
+  },
+  "note": "当前 rig 已完成常数时间偏移解算；融合查看器将 MID-360S 扫描末时刻换算到 D435i 深度时钟轴。"
+}

@@ -5,9 +5,15 @@ import os
 import tempfile
 import unittest
 
-from lidar_calib import (CURRENT_RIG_MANIFEST, EXTRINSIC_EQUATION,
-                         LOCAL_EXTRINSIC_RESULT, SPECS, TASKS, _matrix4,
-                         collect_lidar)
+from lidar_calib import (ACTIVE_TASK_IDS, CURRENT_RIG_MANIFEST,
+                         D435I_DEPTH_IMU_CONVENTION, EXTRINSIC_EQUATION,
+                         IMU_CLOCK_CONVENTION, LIDAR_DEPTH_TIME_CONVENTION,
+                         LIDAR_IMU_EQUATION, LIDAR_IMU_OPERATIONAL_SCHEMA,
+                         LIDAR_IMU_TIME_CONVENTION, LOCAL_EXTRINSIC_RESULT,
+                         MID360S_IMU_ACCEL_EQUATION,
+                         MID360S_IMU_OPERATIONAL_SCHEMA, SPECS, TASKS,
+                         TIMESYNC_OPERATIONAL_SCHEMA, _matrix4,
+                         collect_lidar, lidar_references)
 
 
 IDENTITY4 = [[1, 0, 0, 0], [0, 1, 0, 0],
@@ -113,6 +119,91 @@ def operational_result(task):
     return doc
 
 
+def operational_aux_result(task):
+    doc = valid_result(task)
+    doc['status'] = 'operational'
+    doc.pop('validation')
+    doc['source_data'] = [{
+        'role': 'operational_capture',
+        'path': f'data/{task["id"]}/run1',
+        'sha256': 'e' * 64,
+    }]
+    if task['id'] == 'mid360s_imu':
+        doc['local_schema'] = MID360S_IMU_OPERATIONAL_SCHEMA
+        doc['frame_convention'] = {
+            'frame': 'mid360s_imu_frame',
+            'accel_equation': MID360S_IMU_ACCEL_EQUATION,
+        }
+        doc['result'] = {
+            'accel_input_unit': 'g',
+            'accel_output_unit': 'm/s^2',
+            'accel_unit_scale_ms2_per_g': 9.80665,
+            'accel_bias_ms2': [0.01, -0.02, 0.03],
+            'accel_scale': [1.001, 0.999, 1.002],
+            'accel_misalignment_rad': [0.001, -0.002, 0.003],
+            'T_misalignment': [
+                [1.0, -0.001, -0.002],
+                [0.0, 1.0, -0.003],
+                [0.0, 0.0, 1.0],
+            ],
+            'accel_correction_matrix': [
+                [1.001, -0.000999, -0.002004],
+                [0.0, 0.999, -0.003006],
+                [0.0, 0.0, 1.002],
+            ],
+            'gyro_bias_rad_s': [0.001, -0.001, 0.0005],
+            'pose_count': 15,
+            'fit_pose_count': 12,
+            'holdout_pose_count': 3,
+            'gravity_reference_ms2': 9.78767,
+            'accel_fit_residual_rms_ms2': 0.02,
+            'accel_holdout_residual_rms_ms2': 0.03,
+            'gyro_static_residual_rms_rad_s': 0.002,
+            'imu_sample_rate_hz': 200.0,
+            'noise_window_duration_s': 30.0,
+            'accel_noise_density_ms2_sqrt_hz': [0.02, 0.021, 0.019],
+            'gyro_noise_density_rad_s_sqrt_hz': [0.001, 0.0011, 0.0009],
+            'noise_density_method': 'short_window_white_noise',
+            'allan_characterization': 'not_performed',
+        }
+    elif task['id'] == 'mid360s_lidar_imu':
+        doc['local_schema'] = LIDAR_IMU_OPERATIONAL_SCHEMA
+        doc['frame_convention'] = {
+            'from': 'mid360s_imu_frame', 'to': 'livox_frame',
+            'equation': LIDAR_IMU_EQUATION,
+        }
+        doc['result'].update({
+            'T_lidar_imu': IDENTITY4,
+            'time_offset_lidar_to_imu_ms': 0.0,
+            'time_offset_convention': LIDAR_IMU_TIME_CONVENTION,
+            'deskew_mode': 'rotation_only',
+            'per_point_time_field': 'offset_time',
+            'offset_time_valid_ratio': 1.0,
+        })
+    elif task['id'] == 'mid360s_d435i_td':
+        doc['local_schema'] = TIMESYNC_OPERATIONAL_SCHEMA
+        doc['frame_convention'] = {
+            'from': 'livox_scan', 'to': 'd435i_depth',
+            'equation': LIDAR_DEPTH_TIME_CONVENTION,
+        }
+        doc['result'].update({
+            'imu_clock_offset_livox_to_d435i_ms': -1.94,
+            'd435i_depth_to_imu_timeshift_ms': 4.0494159,
+            'time_offset_lidar_to_d435_depth_ms': -5.9894159,
+            'imu_clock_offset_convention': IMU_CLOCK_CONVENTION,
+            'd435i_depth_to_imu_timeshift_convention':
+                D435I_DEPTH_IMU_CONVENTION,
+            'time_offset_lidar_to_d435_depth_convention':
+                LIDAR_DEPTH_TIME_CONVENTION,
+            'segment_offsets_ms': [-1.91, -2.62, -1.56],
+            'residual_rmse_rad_s': 0.0184,
+            'matched_samples': 12910,
+        })
+    else:
+        raise AssertionError(task['id'])
+    return doc
+
+
 class LidarCalibrationLifecycleTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -211,6 +302,98 @@ class LidarCalibrationLifecycleTest(unittest.TestCase):
         self.assertIn('五场景稠密配准与多起点一致性已完成', item['note'])
         self.assertEqual(item['checks'], [])
         self.assert_partition(stages, pending)
+
+    def test_current_rig_operational_aux_results_skip_generic_gates(self):
+        self.write_current_rig()
+        for task_id in ('mid360s_imu', 'mid360s_lidar_imu',
+                        'mid360s_d435i_td'):
+            task = next(item for item in TASKS if item['id'] == task_id)
+            self.write(task, operational_aux_result(task))
+            stages, pending = collect_lidar(self.tmp.name)
+            item = next(x for x in stages if x['id'] == task_id)
+            self.assertEqual(item['quality'], 'local')
+            self.assertEqual(item['quality_label'], 'LOCAL')
+            self.assertEqual(item['source'], task['result_file'])
+            self.assertEqual(item['checks'], [])
+            # Their generic prerequisites are intentionally absent: this
+            # current-rig lane must not be demoted by VALIDATED catalog gates.
+            self.assertNotIn(task_id, {x['id'] for x in pending})
+            self.assert_partition(stages, pending)
+
+    def test_mid360s_imu_operational_core_and_noise_claim_are_checked(self):
+        self.write_current_rig()
+        task = next(item for item in TASKS if item['id'] == 'mid360s_imu')
+        doc = operational_aux_result(task)
+        doc['result']['accel_unit_scale_ms2_per_g'] = 1.0
+        doc['result']['pose_count'] = 8
+        doc['result']['accel_holdout_residual_rms_ms2'] = float('nan')
+        doc['result']['noise_density_method'] = 'allan_deviation'
+        doc['result']['allan_characterization'] = '2h_allan'
+        doc['result']['allan_duration_h'] = 2.0
+        doc['result']['accel_correction_matrix'][0][0] = 2.0
+        doc['source_data'][0]['sha256'] = 'not-a-sha256'
+        self.write(task, doc)
+        stages, pending = collect_lidar(self.tmp.name)
+        item = next(x for x in pending if x['id'] == task['id'])
+        self.assertIn('sha256 必须为 64 位十六进制', item['progress'])
+        self.assertIn('accel_unit_scale_ms2_per_g 必须为 9.80665',
+                      item['progress'])
+        self.assertIn('pose_count 必须是 >= 13', item['progress'])
+        self.assertIn('result 含 NaN/Inf', item['progress'])
+        self.assertIn('noise_density_method 必须为 short_window_white_noise',
+                      item['progress'])
+        self.assertIn('accel_correction_matrix 与 accel_scale', item['progress'])
+        self.assertIn('不能冒充 2 h Allan', item['progress'])
+        self.assert_partition(stages, pending)
+
+    def test_aux_operational_result_is_bound_to_current_rig(self):
+        self.write_current_rig()
+        task = next(item for item in TASKS
+                    if item['id'] == 'mid360s_d435i_td')
+        doc = operational_aux_result(task)
+        doc['mount_session_id'] = 'another-mount'
+        doc['devices'][0]['serial'] = 'ANOTHER-LIDAR'
+        self.write(task, doc)
+        stages, pending = collect_lidar(self.tmp.name)
+        item = next(x for x in pending if x['id'] == task['id'])
+        self.assertIn('mount_session_id 与当前 rig', item['progress'])
+        self.assertIn('lidar serial 与当前 rig', item['progress'])
+        self.assert_partition(stages, pending)
+
+    def test_aux_operational_result_requires_current_rig_manifest(self):
+        task = next(item for item in TASKS if item['id'] == 'mid360s_imu')
+        self.write(task, operational_aux_result(task))
+        stages, pending = collect_lidar(self.tmp.name)
+        item = next(x for x in pending if x['id'] == task['id'])
+        self.assertIn('当前 rig 清单不存在', item['progress'])
+        self.assertNotIn(task['id'], {x['id'] for x in stages})
+        self.assert_partition(stages, pending)
+
+    def test_timesync_operational_composition_and_sign_are_checked(self):
+        self.write_current_rig()
+        task = next(item for item in TASKS
+                    if item['id'] == 'mid360s_d435i_td')
+        doc = operational_aux_result(task)
+        doc['result']['time_offset_lidar_to_d435_depth_ms'] = 5.9894159
+        self.write(task, doc)
+        stages, pending = collect_lidar(self.tmp.name)
+        item = next(x for x in pending if x['id'] == task['id'])
+        self.assertIn('必须等于 IMU 时钟偏移减去', item['progress'])
+        self.assert_partition(stages, pending)
+
+    def test_active_catalog_and_reference_catalog_are_disjoint(self):
+        active = set(ACTIVE_TASK_IDS)
+        references = lidar_references()
+        reference_ids = {item['id'] for item in references}
+        all_ids = {item['id'] for item in TASKS}
+        self.assertEqual(
+            active,
+            {'mid360s_d435i_ext', 'mid360s_imu', 'mid360s_lidar_imu',
+             'mid360s_d435i_td'},
+        )
+        self.assertFalse(active & reference_ids)
+        self.assertEqual(active | reference_ids, all_ids)
+        self.assertTrue(all('applies' in item for item in references))
 
     def test_operational_result_must_match_current_rig(self):
         task = next(item for item in TASKS if item['id'] == 'mid360s_d435i_ext')

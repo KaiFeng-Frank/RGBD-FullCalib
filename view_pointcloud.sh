@@ -16,7 +16,7 @@ aux_server_pid=""
 usage() {
   cat <<'EOF'
 Usage:
-  ./view_pointcloud.sh fused [--extrinsic PATH]
+  ./view_pointcloud.sh fused [--extrinsic PATH] [--timesync PATH] [--no-deskew]
   ./view_pointcloud.sh dual [--extrinsic PATH]   # backward-compatible alias
   ./view_pointcloud.sh mid360 [server options...]
   ./view_pointcloud.sh ros2 [topic|auto] [server options...]
@@ -200,6 +200,7 @@ open_browser_later() {
 case "${mode}" in
   fused|dual)
     dual_extrinsic_args=()
+    dual_lidar_args=()
     while [[ $# -gt 0 ]]; do
       case "$1" in
         --extrinsic)
@@ -246,6 +247,33 @@ case "${mode}" in
           fi
           draft_path="$(cd -- "$(dirname -- "${draft_value}")" && pwd)/$(basename -- "${draft_value}")"
           dual_extrinsic_args=(--extrinsic-draft "${draft_path}")
+          shift
+          ;;
+        --timesync)
+          if [[ $# -lt 2 || -z "$2" ]]; then
+            echo "--timesync requires an explicit JSON path." >&2
+            exit 2
+          fi
+          if [[ ! -f "$2" ]]; then
+            echo "Timesync result does not exist: $2" >&2
+            exit 2
+          fi
+          timesync_path="$(cd -- "$(dirname -- "$2")" && pwd)/$(basename -- "$2")"
+          dual_lidar_args+=(--timesync "${timesync_path}")
+          shift 2
+          ;;
+        --timesync=*)
+          timesync_value="${1#--timesync=}"
+          if [[ -z "${timesync_value}" || ! -f "${timesync_value}" ]]; then
+            echo "Timesync result does not exist: ${timesync_value}" >&2
+            exit 2
+          fi
+          timesync_path="$(cd -- "$(dirname -- "${timesync_value}")" && pwd)/$(basename -- "${timesync_value}")"
+          dual_lidar_args+=(--timesync "${timesync_path}")
+          shift
+          ;;
+        --no-deskew)
+          dual_lidar_args+=(--no-deskew)
           shift
           ;;
         *)
@@ -355,7 +383,7 @@ if [[ "${dual_mode:-0}" == "1" ]]; then
   "${LIDAR_PYTHON}" server.py --source ros2 --topic /livox/lidar \
     --no-http --ws "${LIDAR_PORT}" --max-fps "${LIDAR_MAX_FPS:-10}" \
     --max-points "${LIDAR_MAX_POINTS:-250000}" --overlay-role lidar \
-    "${dual_extrinsic_args[@]}" &
+    "${dual_extrinsic_args[@]}" "${dual_lidar_args[@]}" &
   aux_server_pid="$!"
   set +e
   # The workbench is only healthy while both backends are alive. Exit on the

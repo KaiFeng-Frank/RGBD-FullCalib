@@ -1,0 +1,156 @@
+{
+  "schema_version": 1,
+  "task_id": "mid360s_imu",
+  "status": "operational",
+  "local_schema": "d435i_calib/mid360s_imu_operational/v1",
+  "created_utc": "2026-08-31T23:57:30Z",
+  "rig_id": "mid360s-d435i-01",
+  "mount_session_id": "a56af70a-da0b-49d2-bc84-540c37cb3b05",
+  "devices": [
+    {
+      "role": "lidar",
+      "model": "Livox MID-360S",
+      "serial": "ARMDN6B0030122"
+    }
+  ],
+  "method": "Multi-orientation static-gravity fit with explicit Livox g-to-SI conversion, independent orientation holdout, and per-pose short-window white-noise estimation",
+  "frame_convention": {
+    "frame": "mid360s_imu_frame",
+    "accel_equation": "a_corrected_ms2 = T_misalignment * diag(accel_scale) * (9.80665 * a_raw_g - accel_bias_ms2)"
+  },
+  "source_data": [
+    {
+      "role": "operational_capture",
+      "path": "data/mid360s_imu_intrinsic_20260901_run1",
+      "sha256": "6587f59d258fd0c1d4e3ff5508a0e05264fd872a08f55e7e733d372fbe306063",
+      "hash_scheme": "sha256-tree-v1(length-prefixed relative path, size, bytes; uint64 little-endian)"
+    },
+    {
+      "role": "operational_capture",
+      "path": "data/mid360s_imu_intrinsic_20260901_run2",
+      "sha256": "914c30ba35e2271615d89d8754d162c91b6f464cd138b748ef618adfccbaba67",
+      "hash_scheme": "sha256-tree-v1(length-prefixed relative path, size, bytes; uint64 little-endian)"
+    },
+    {
+      "role": "operational_capture",
+      "path": "data/mid360s_imu_intrinsic_20260901_run3",
+      "sha256": "094d60b4d2bc25dbdeeb4782f2dd7472b4de04f3f2879f5c398e498f6ec60faf",
+      "hash_scheme": "sha256-tree-v1(length-prefixed relative path, size, bytes; uint64 little-endian)"
+    },
+    {
+      "role": "accepted_analysis",
+      "path": "data/mid360s_imu_intrinsic_20260901_analysis_all.json",
+      "sha256": "e0bc7bdb697027a030dccf96adf39a09332dbf975cddfcd3a937da5735b915d2"
+    },
+    {
+      "role": "accepted_analysis_arrays",
+      "path": "data/mid360s_imu_intrinsic_20260901_analysis_all.npz",
+      "sha256": "00c32cdbd230449cd1e2efe4a51819e5f565faebf2774a3010316443e6c008e4"
+    }
+  ],
+  "result": {
+    "accel_input_unit": "g",
+    "accel_output_unit": "m/s^2",
+    "accel_unit_scale_ms2_per_g": 9.80665,
+    "T_misalignment": [
+      [
+        1.0,
+        0.0022353363749092556,
+        0.0017696490046657022
+      ],
+      [
+        0.0,
+        1.0,
+        0.0031679259389739032
+      ],
+      [
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "accel_scale": [
+      0.9996645762359604,
+      1.0068007199412616,
+      1.0070296454684122
+    ],
+    "accel_misalignment_rad": [
+      -0.0022353363749092556,
+      0.0017696490046657022,
+      -0.0031679259389739032
+    ],
+    "accel_bias_ms2": [
+      -0.017452743607189358,
+      0.02769767542878566,
+      -0.015599460155642625
+    ],
+    "accel_correction_matrix": [
+      [
+        0.9996645762359604,
+        0.0022505382715695284,
+        0.0017820890097720306
+      ],
+      [
+        0.0,
+        1.0068007199412616,
+        0.003190195335195077
+      ],
+      [
+        0.0,
+        0.0,
+        1.0070296454684122
+      ]
+    ],
+    "gyro_bias_rad_s": [
+      -0.006402168077111384,
+      0.0008224351955391686,
+      -0.00831762306746774
+    ],
+    "gravity_reference_ms2": 9.787673065883645,
+    "pose_count": 17,
+    "fit_pose_count": 14,
+    "holdout_pose_count": 3,
+    "accel_fit_residual_rms_ms2": 0.009618736933259061,
+    "accel_holdout_residual_rms_ms2": 0.011935213103076634,
+    "accel_full_refit_residual_rms_ms2": 0.009483690206703598,
+    "imu_sample_rate_hz": 196.15616305991057,
+    "noise_window_duration_s": 0.49580482200000003,
+    "accel_noise_density_ms2_sqrt_hz": [
+      0.004973495449908652,
+      0.0054053444292723836,
+      0.006853460641252205
+    ],
+    "gyro_noise_density_rad_s_sqrt_hz": [
+      0.0014206844340393945,
+      0.0012157298075781175,
+      0.0017492430304915138
+    ],
+    "gyro_static_residual_rms_rad_s": 0.03888253668415502,
+    "noise_density_method": "short_window_white_noise",
+    "allan_characterization": "not_performed",
+    "jacobian_rank": 9,
+    "jacobian_parameter_count": 9,
+    "jacobian_condition_column_normalized": 2.0248072437323232,
+    "orientation_scatter_eigenvalues": [
+      0.2817381718733677,
+      0.3297574941529785,
+      0.3885043339736538
+    ],
+    "orientation_minimum_pair_angle_deg": 20.265380985320125,
+    "orientation_axis_span": [
+      1.9875171195272134,
+      1.9963837386214816,
+      1.999801145682047
+    ]
+  },
+  "summary": {
+    "quality": "OPERATIONAL · current MID-360S",
+    "coverage": "17 orientations: 14 fit + 3 independent holdout; Jacobian rank 9/9, normalized condition 2.02",
+    "accel_fit": "fit RMS 0.00962 m/s^2; holdout RMS 0.01194 m/s^2",
+    "accel_scale": "[0.999665, 1.006801, 1.007030]",
+    "accel_bias": "[-0.01745, +0.02770, -0.01560] m/s^2",
+    "gyro_bias": "[-0.006402, +0.000822, -0.008318] rad/s",
+    "noise": "per-axis short-window white-noise density at 196.16 Hz; not an Allan characterization"
+  },
+  "note": "当前 MID-360S 的加速度单位换算、加速度计偏置/标度/非正交、陀螺静态偏置及短窗白噪声参数已固结。"
+}

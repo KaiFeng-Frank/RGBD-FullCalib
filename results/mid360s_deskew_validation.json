@@ -1,0 +1,74 @@
+{
+  "schema": "d435i_calib/mid360s_rotation_deskew_validation/v1",
+  "status": "passed",
+  "created_utc": "2026-08-31T23:20:31Z",
+  "rig_id": "mid360s-d435i-01",
+  "mount_session_id": "a56af70a-da0b-49d2-bc84-540c37cb3b05",
+  "source_data": {
+    "path": "data/lidar_imu_timesync_20260901_run1",
+    "sha256": "1528c7c1a62d9176ba6d2d3f228a1b2fef0092342194963119c0994bb522131c",
+    "hash_scheme": "sha256-tree-v1(length-prefixed relative path, size, bytes)"
+  },
+  "implementation": "viewer/livox_deskew.py::rotation_deskew_to_scan_end",
+  "reference_frame": "scan_end",
+  "deskew_scope": "rotation_only with calibrated rotational lever-arm component; no platform translation",
+  "audit": {
+    "lidar_scans": 647,
+    "imu_samples": 12932,
+    "raw_point_slots": 12937632,
+    "offset_time_valid_ratio": 1.0,
+    "finite_nonzero_points": 9766346,
+    "scan_span_ms_p5": 99.20353920000001,
+    "scan_span_ms_median": 100.210624,
+    "scan_span_ms_p95": 100.4416201,
+    "imu_covered_scans": 646,
+    "imu_coverage_ratio": 0.9984544049459042,
+    "imu_duplicate_or_reversed_timestamps": 0
+  },
+  "metric": {
+    "name": "same-identity midpoint-selected dominant-plane orthogonal residual",
+    "selection_bias_control": "RANSAC selects IDs on (raw + deskew) / 2, invariant to swapping treatment labels; raw and deskew fits use identical point IDs",
+    "point_prefilter": "finite nonzero points with 0.5 <= range <= 15.0 m",
+    "acceptance": "at least 500 plane IDs, at least 80 percent point-time span, and at least 25 IDs in every time quartile"
+  },
+  "high_rotation": {
+    "selection": "top 80 IMU-covered scans by integral abs(omega) dt",
+    "accepted_scans": 70,
+    "raw_p95_mm_median": 70.0354083003421,
+    "deskew_p95_mm_median": 20.38690390318174,
+    "paired_p95_ratio_median": 0.30537043340039594,
+    "paired_p95_ratio_bootstrap95": [
+      0.2550792527143441,
+      0.335231793811421
+    ],
+    "improved_scans": 70,
+    "raw_median_residual_mm_median": 16.12632731170889,
+    "deskew_median_residual_mm_median": 5.00344743353863
+  },
+  "low_rotation_control": {
+    "selection": "bottom 80 IMU-covered scans by integral abs(omega) dt",
+    "accepted_scans": 80,
+    "raw_p95_mm_median": 17.255209542774054,
+    "deskew_p95_mm_median": 17.262151718857375,
+    "paired_p95_ratio_median": 0.9997856564931005,
+    "paired_p95_ratio_bootstrap95": [
+      0.9994980151010999,
+      1.0002981196121608
+    ]
+  },
+  "lever_arm_ablation": {
+    "selection": "identical point IDs selected on (raw + no_lever + lever) / 3",
+    "high_rotation_no_lever_p95_mm_median": 20.211561543643835,
+    "high_rotation_with_lever_p95_mm_median": 19.478762057838487,
+    "paired_ratio_median": 0.9724035166295804,
+    "paired_ratio_bootstrap95": [
+      0.9564937271649381,
+      0.9931438067785537
+    ],
+    "improved_scans": 52,
+    "accepted_scans": 70,
+    "low_rotation_no_lever_p95_mm_median": 17.21892033289476,
+    "low_rotation_with_lever_p95_mm_median": 17.21938644975316
+  },
+  "verdict": "Rotation-only deskew with the calibrated IMU lever arm materially reduces motion-thickened planes during real rotation and leaves low-rotation scans unchanged. It does not claim platform-translation or full 6DoF compensation."
+}

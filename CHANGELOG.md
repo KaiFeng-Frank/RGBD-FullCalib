@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.3.0] — 2026-09-01
 
 - Added a frozen, reproducible acceptance test for firmware/SDK-delivered D435i
   IR1/IR2 epipolar alignment. It uses an independent 16-pair holdout with no
@@ -21,6 +21,35 @@
 - Implemented the direct LiDAR-camera capture/solve/import workflow and
   published a five-scene `LOCAL operational` transform for the documented
   mount and fused viewer.
+- Added the documented rig's dual-gyroscope constant time alignment:
+  `t_d435i_imu = t_livox_imu − 1.940 ms`, composed with the frozen D435i
+  camera–IMU shift as `t_depth = t_livox − 5.989 ms` for fused viewing.
+- Added the MID-360S LiDAR–IMU operational transform from the official Livox
+  coordinate definition: identity axes with IMU position
+  `[+11.00,+23.29,−44.12] mm` in `livox_frame`.
+- Added a 17-pose MID-360S IMU operational calibration: 14 fit poses and 3
+  independent holdouts, fit/holdout RMS 0.00962/0.01194 m/s², with
+  accelerometer bias/scale/misalignment, gyro bias, and per-axis 0.496 s
+  short-window white-noise density. The result labels this as short-window
+  white noise rather than long-duration Allan bias instability/random walk.
+- Added one fail-closed MID-360S IMU pipeline from identity preflight and
+  automatic pose capture (or rosbag2/NPZ reuse) through solve, independent
+  holdout/observability gates, exclusive formal promotion, and result-catalog
+  verification.
+- Added an installable `rgbd_fullcalib` ROS 2 package with calibration and
+  runtime launch files. The runtime node converts the Livox raw-g stream,
+  applies the promoted accelerometer model and gyro static bias, and publishes
+  calibrated SI `sensor_msgs/Imu` without claiming gyro scale.
+- Added the exact two-part printable 3MF used by the documented rig, including
+  its millimetre-unit geometry, print settings, orientation note, and SHA-256.
+- Added per-point Livox `offset_time` scan-end rotational deskew using the
+  built-in IMU and calibrated lever arm. Real-scan A/B reduced the
+  high-rotation dominant-plane P95 from 70.04 to 20.39 mm on 70/70 accepted
+  scans, while the low-rotation control remained 17.255→17.262 mm. This scope
+  is rotational, not platform-translation or full-6DoF compensation.
+- Split GUI calibration content into 11 current-rig result cards and a
+  7-item reference catalog for other devices/deployments. Reference entries
+  do not become current-rig pending/rework and do not define a release plan.
 - Added a post-start stream-freshness watchdog: five seconds without frames is
   a hard disconnect, the backend exits, D435i always releases its pipeline,
   and the fused launcher cascades cleanup after an unplug.
@@ -44,8 +73,7 @@
 - Renamed `d435i-calibration-field-guide` → `RGBD-FullCalib`
 - Rig photos added
 
-At the 0.2.0 release, the next planned stage was Mid-360 + LiDAR-camera
-extrinsics; see the current [ROADMAP.md](ROADMAP.md) for its implemented status.
+The Mid-360 + LiDAR-camera stage named in v0.2.0 was completed in v0.3.0.
 
 ## [0.1.0] — 2026-08-28
 
@@ -59,7 +87,7 @@ First public release: one Intel RealSense D435i calibrated end to end.
 - Tools: capture with settle detection, ROS1 bag writing without ROS,
   Allan analysis, thermal sweep + per-channel model, accelerometer
   intrinsics from 12 static poses, A/B bag rewriting
-- WebGL2 viewer: live point cloud, verdict cards, pending-experiment
+- WebGL2 viewer: live point cloud, verdict cards, calibration-stage
   placeholders; `?static=1` screenshot mode
 - Field notes: 15+ documented pitfalls (CALIBRATION.md), error-impact
   analysis with LiDAR comparison columns (IMPACT_ANALYSIS.md)
