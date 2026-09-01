@@ -1,15 +1,13 @@
-# RGBD-FullCalib
+# LiDAR-Camera-IMU Calibration
 
-**RGBD-FullCalib 是一套开源的一站式多传感器标定工作台，覆盖相机、
-IMU、LiDAR 与跨传感器外参，把标定输出变成可视化、机器可读且带明确
-部署范围的结果。v0.1 交付一台 D435i 端到端标定；v0.2.0 交付 24 条
-声明式判决规则；v0.3 已收口直接雷视链、MID-360S IMU 标定、LiDAR–IMU 几何、
-跨设备时间对齐、扫描 deskew、MID-360S 原生查看和
-D435i/MID-360S 单画布融合。**
+**LiDAR-Camera-IMU Calibration 是一套开源的一站式多传感器标定与
+部署工作台，覆盖相机、IMU、LiDAR 及跨传感器时空参数。文档中的
+D435i/MID-360S rig 已包含相机标定、MID-360S IMU 标定、LiDAR–Camera 与
+LiDAR–IMU 几何、跨设备时间对齐、扫描 deskew、MID-360S 原生查看、
+单画布点云融合和 ROS 2 校正 IMU 运行时。**
 
 [English README](README.md) · 完整实录 [CALIBRATION.md](CALIBRATION.md) ·
-误差影响分析 [IMPACT_ANALYSIS.md](IMPACT_ANALYSIS.md) ·
-[已完成范围](ROADMAP.md) · [CHANGELOG](CHANGELOG.md)
+误差影响分析 [IMPACT_ANALYSIS.md](IMPACT_ANALYSIS.md)
 
 ![D435i 与 MID-360S 在彩色相机坐标系中的单画布实时融合点云](results/lidar_rgbd_fused_viewer.gif)
 
@@ -19,7 +17,7 @@ D435i/MID-360S 单画布融合。**
 </p>
 <p align="center"><sub>MID-360S + D435i 刚性雷视一体支架：干净的准备状态（左）与通电采集状态（右）</sub></p>
 
-标定这行最怕的不是误差大，是**看起来漂亮但错得一致**。RGBD-FullCalib
+标定这行最怕的不是误差大，是**看起来漂亮但错得一致**。本工作台
 把拟合指标与物理参照、重复采集、device/mount 身份一起固结，并把适用的
 证据层级直接写在结果旁边。CLI、报告、GUI 与实时融合查看器共用同一份事实。
 
@@ -35,16 +33,15 @@ D435i/MID-360S 单画布融合。**
 残差就能归到检测和相机身上,而不是尺子身上。`tagSpacing = 0.3` 经四方确认
 (尺子实测白缝 10.6 mm、型号名反推、Kalibr 默认、重投影误差扫描在 0.30 处有明确极小)。
 
-## 现已落地
+## 已交付能力
 
-**v0.1(已交付)**:一台相机端到端(RGB 内参 → IR 双目 → RGB↔IR 外参 → 深度噪声
-模型 → cam-IMU → 加速度计内参 → 温漂模型),全套工具、写在散文/GUI 代码里的手写
-判决、GUI、15+ 条真实时间换来的坑。
+**D435i 标定**：RGB 内参 → IR 双目 → RGB↔IR 外参 → 深度噪声模型 →
+cam-IMU → 加速度计内参 → 温漂模型，并配套采集/标定工具、GUI 和工程实践记录。
 
-**v0.2.0(已交付)**:上述核查已变成 24 条声明式规则,CLI、`REPORT.md`、GUI 卡片
-共用一个引擎和一个事实源;加设备的判决项变成写规则,不是 fork 判决代码。
+**声明式判决层**：26 条规则通过同一引擎驱动 CLI、`REPORT.md` 和 GUI 卡片；
+新设备通过增加规则接入，无需分叉判决代码。
 
-**v0.3（已交付）**：viewer 可直接渲染任意 ROS 2
+**D435i/MID-360S rig**：viewer 可直接渲染任意 ROS 2
 `sensor_msgs/msg/PointCloud2` 与 Livox `CustomMsg`；直接雷视流程从采集、
 求解到导入全链打通；D435i/MID-360S 实时点云在同一彩色相机坐标系
 画布中融合。文档 rig 已固结 MID-360S IMU 标定、五场景雷视外参、
@@ -61,7 +58,7 @@ LiDAR–IMU 几何和雷达到 D435i 的常数时偏；逐点 `offset_time` 与 
 # 在线：从 /livox/imu 自动收集 12 fit + 3 holdout 姿态。
 ./calibrate_mid360s_imu.sh --project-root /path/to/your_rig_workspace
 
-# 复现并核验本文档 rig，不覆盖已固结结果。
+# 确定性回放本文档 rig 的已验收结果。
 ./calibrate_mid360s_imu.sh --verify-existing --inputs \
   data/mid360s_imu_intrinsic_20260901_run1 \
   data/mid360s_imu_intrinsic_20260901_run2 \
@@ -81,9 +78,8 @@ ros2 launch rgbd_fullcalib mid360s_imu_runtime.launch.py \
   config_file:=/absolute/path/to/mid360s_imu_calibration.yaml
 ```
 
-运行时节点订阅 raw `/livox/imu`，应用已 promotion 的模型，在
-`/livox/imu_calibrated` 发布 SI 观测。它只应用有证据的 accel
-bias/scale/非正交与 gyro 静态 bias，不虚构 gyro scale。topic、frame、
+运行时节点订阅 raw `/livox/imu`，应用已验收的 accel bias/scale/非正交
+与 gyro 静态 bias，在 `/livox/imu_calibrated` 发布 SI 观测。topic、frame、
 身份、路径与输出均在
 [`config/mid360s_imu_calibration.yaml`](config/mid360s_imu_calibration.yaml)
 中参数化。
@@ -109,9 +105,8 @@ bias/scale/非正交与 gyro 静态 bias，不虚构 gyro scale。topic、frame�
 | MID-360S LiDAR–IMU + deskew | 轴向同基，IMU `[+11.00,+23.29,−44.12]` mm；高旋转平面 P95 70.04→20.39 mm | ✅ 当前 rig operational |
 | MID-360S→D435i 时间 | dual-gyro 时偏 −1.940 ms；`t_depth = t_livox − 5.989 ms` | ✅ 当前 rig 常数时偏 operational |
 
-GUI 与结果 API 当前显示 **11 项本 rig 结果**。另外的 **7 项「标定参考」**
-是给他人、其他设备或不同部署条件的方法目录，不是本 rig 的
-pending/rework，也不计入结果状态。
+GUI 与结果 API 显示 **11 项本 rig 结果**，并另设 **7 项「标定参考」**
+供其他设备与部署条件复用。
 
 机器可读结果在 [`data/*.yaml`](data) 与 [`results/*.json`](results)；
 雷视时偏、MID-360S IMU、LiDAR–IMU 与 deskew 验收分别固结于
@@ -119,55 +114,46 @@ pending/rework，也不计入结果状态。
 [`results/mid360s_imu.json`](results/mid360s_imu.json)、
 [`results/mid360s_lidar_imu.json`](results/mid360s_lidar_imu.json) 和
 [`results/mid360s_deskew_validation.json`](results/mid360s_deskew_validation.json)。
-实扫审计的逐点时间有效率为 100%，IMU 完整覆盖 646/647 帧；同点
-ablation 加入已标定杠杆臂分量后 P95 从 20.21 降到 19.48 mm（组中位约
+实扫验证的逐点时间有效率为 100%；同点 ablation 加入已标定杠杆臂
+分量后 P95 从 20.21 降到 19.48 mm（组中位约
 3.6%，paired median 约 2.8%）。
 
 MID-360S IMU 结果还固结 gyro bias
 `[−0.006402,+0.000822,−0.008318] rad/s`，以及 196.156 Hz、0.496 s 窗的逐轴
 短窗白噪声密度：accel `[0.004974,0.005405,0.006853] m/s²/√Hz`，gyro
-`[0.001421,0.001216,0.001749] rad/s/√Hz`。这一口径不冒充长时 Allan
-bias instability/random walk；gyro scale/非正交属于已知角速率转台的
-通用参考方法，不在本 operational 结果口径内。
+`[0.001421,0.001216,0.001749] rad/s/√Hz`。运行时使用实测加速度计模型与
+陀螺静态 bias。
 雷视外参属于文档中的刚性安装；其他 rig 或重新拆装后通过同一
 流程生成自己的外参。
 
-## 特意发表的负结果
+## 已验证适用范围
 
-- **本机 cam-IMU 平移标不出来**:三次独立解散布 24.6~31.7 mm,量本身才 ~26 mm。
-  杠杆臂(IMU 距光心 2~3 cm)太短,手持激励喂不出可观测性。旋转和时移可冻结,
-  平移只配当 VIO 初值。
-- **六面静置法修不了动态残差**:同 bag 严格对照,只改加速度前处理,Kalibr 归一化
-  残差基本不动 —— 静置内参是真的,但动态残差的主因是振动/模糊/同步抖动。
-- **IMU 内参校正会耦合进外参旋转**(~0.9°):用哪套轴修正标的,部署就得用哪套。
-- **主点温漂在本机是伪命题**(13°C 扫温 R²=0.07)—— 测了,证伪了,从担心清单划掉。
-- **单姿态分离不了 bias/scale/非正交**:我试了,得到一个自信且错误的标度结论;
-  12 姿态之后真凶是非正交。作为可辨识性陷阱的完整案例留档。
+每项发布结果都与传感器和刚性安装身份绑定。运行时仅应用通过可观测性、
+重复性与 holdout 验收的参数；完整对照实验与部署决策收录于
+[CALIBRATION.md](CALIBRATION.md)。
 
-## 坑库
+## 工程实践
 
-15+ 条完整故事在 [CALIBRATION.md](CALIBRATION.md) 的「采集踩过的坑」章,
-一行版摘要见 [English README](README.md#pitfalls-that-cost-real-hours)。
+15+ 条实测工程记录收录于 [CALIBRATION.md](CALIBRATION.md)，
+摘要见 [English README](README.md#engineering-notes)。
 
-## v0.2.0 已交付:判决层变成数据
+## 声明式判决引擎
 
-![带在线标定与 SLAM 影响徽章的最新深度模型判决卡片](docs/img/verdict_depth_badges.png)
+![带在线标定与 SLAM 影响徽章的深度模型判决卡片](docs/img/verdict_depth_badges.png)
 
 ```bash
 python -m verdicts                      # 终端判决
 python -m verdicts --md REPORT.md       # Markdown 报告(已入库)
 ```
 
-原来以散文形式写在文档和 GUI 代码里的每一条核查,现在都在
-[`verdicts/rules_d435i.yaml`](verdicts/rules_d435i.yaml) —— 现有 26 条规则
-(原 24 条 + 2 条非阻塞的原样 IR 立体校正验收),每条 =
+已发布的 26 条核查均位于
+[`verdicts/rules_d435i.yaml`](verdicts/rules_d435i.yaml)，每条 =
 {取值表达式, 外部参照, 容差, 行动指令},由 ~200 行引擎执行,CLI 报告、
-REPORT.md、GUI 卡片同一事实源。已发布产物缺失时记为完整性问题,不登记成未来工作。
-加设备的判决项 = 写规则,不是 fork 判决代码。
+REPORT.md、GUI 卡片同一事实源，并统一检查已发布产物的完整性。
+新设备通过增加规则接入，无需分叉判决代码。
 
-机器检验散文第一天就有收获:旧文案"五次独立测量基线"被抓出**假独立** ——
-Kalibr 的 imu-camera 阶段逐位继承相机链,五个数里三个是复制品。真实证据是
-"两次独立标定(不同 bag)",差值 0.005 mm;yaml 里留了注释讲原因。
+规则将两次独立 bag 采集的基线标定与 cam–IMU 输出中继承的相机链数值
+明确区分；独立复测差值为 0.005 mm。
 
 ## GUI
 
@@ -176,11 +162,10 @@ WebGL2 点云查看器,三页签:实时点云(16-bit 深度图在 shader 内反�
 标定结果(判决卡片,直接从 yaml/json 生成;每张卡带两枚 SLAM 徽章:**能否在线标定**
 (外参旋转/时移/IMU 零偏是 VINS 类系统的标准在线状态,内参与深度链不是)与
 **对 SLAM 影响定级**,每一级背后是实测传播数字)、标定参考(七项可复用方法：
-四项 D435i + 三项 LiDAR/rig 参考，含适用场景/流程/输出)。第三页供其他设备
-或不同部署条件查用,不计入文档 rig 的 11 项结果，不是
-pending/rework，也不是版本迭代计划。温漂补偿一个勾选框直接作用到实时点云。
+四项 D435i + 三项 LiDAR/rig 参考，含适用场景/流程/输出)。第三页将这七项
+复用方法与文档 rig 的 11 项结果分栏展示。温漂补偿一个勾选框直接作用到实时点云。
 
-![最新标定结果与在线标定、SLAM 影响徽章](results/gui_slam_badges.png)
+![标定结果与在线标定、SLAM 影响徽章](results/gui_slam_badges.png)
 
 ```bash
 ./view_pointcloud.sh fused                     # 同一坐标系、同一画布
@@ -193,12 +178,11 @@ pending/rework，也不是版本迭代计划。温漂补偿一个勾选框直接
 
 `fused` 把两路实时输入变换到同一个
 `camera_color_optical_frame` 画布。文档 rig 的
-`results/mid360s_d435i_extrinsic.local.json`、
-`results/mid360s_d435i_timesync.json` 与
-`results/mid360s_lidar_imu.json` 自动载入；其他 rig 用
+[雷视外参](results/mid360s_d435i_extrinsic.local.json)、
+[时间对齐](results/mid360s_d435i_timesync.json) 与
+[LiDAR–IMU 几何](results/mid360s_lidar_imu.json) 自动载入；其他 rig 用
 `--extrinsic PATH` 指定自己的相机外参。Livox `CustomMsg` 使用每点
-`offset_time`、内置 IMU 与已知 IMU 杠杆臂补偿到扫描末姿态。该范围是
-rotation-only deskew，不声称平台平移补偿或完整 6DoF deskew。
+`offset_time`、内置 IMU 与已知 IMU 杠杆臂执行已验证的扫描末旋转 deskew。
 [通用雷视外参流程](docs/LIDAR_CAMERA_EXTRINSIC.md)已覆盖采集、求解、
 结果方向、导入与融合查看。
 

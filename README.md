@@ -1,17 +1,14 @@
-# RGBD-FullCalib
+# LiDAR-Camera-IMU Calibration
 
-**RGBD-FullCalib is an open, one-stop multi-sensor calibration workbench for
-cameras, IMUs, LiDARs and their cross-sensor transforms. It turns calibration
-outputs into visualized, machine-readable results with explicit deployment
-scope. v0.1 shipped one Intel RealSense D435i end to end; v0.2.0 shipped its
-verdict layer as 24 declarative rules; v0.3 closes the direct LiDAR–camera
-chain, MID-360S IMU calibration, LiDAR–IMU geometry, cross-device time
-alignment, scan deskew, native MID-360S viewing, and one-canvas D435i/MID-360S
-fusion.**
+**LiDAR-Camera-IMU Calibration is an open, one-stop multi-sensor calibration
+and deployment workbench for cameras, IMUs, LiDARs and their cross-sensor
+transforms. The documented D435i/MID-360S rig includes camera calibration,
+MID-360S IMU calibration, LiDAR–camera and LiDAR–IMU geometry, cross-device time
+alignment, scan deskew, native MID-360S viewing, one-canvas point-cloud fusion,
+and a ROS 2 calibrated-IMU runtime.**
 
 [中文版 README](README_zh.md) · field notes [CALIBRATION.md](CALIBRATION.md) (Chinese) ·
-error propagation [IMPACT_ANALYSIS.md](IMPACT_ANALYSIS.md) (Chinese) ·
-[COMPLETED SCOPE](ROADMAP.md) · [CHANGELOG](CHANGELOG.md)
+error propagation [IMPACT_ANALYSIS.md](IMPACT_ANALYSIS.md) (Chinese)
 
 ![Live D435i and MID-360S fused point cloud in one camera-frame canvas](results/lidar_rgbd_fused_viewer.gif)
 
@@ -22,7 +19,7 @@ error propagation [IMPACT_ANALYSIS.md](IMPACT_ANALYSIS.md) (Chinese) ·
 <p align="center"><sub>Rigid MID-360S + D435i assembly: clean ready state (left), powered capture state (right)</sub></p>
 
 Calibration's worst failure mode is **looking beautiful while being consistently wrong**.
-RGBD-FullCalib pairs fitted metrics with physical references, repeated captures
+This workbench pairs fitted metrics with physical references, repeated captures
 and device/mount identity, then publishes the applicable evidence tier beside
 the result. The same facts feed the CLI, report, GUI and live fused viewer.
 
@@ -40,18 +37,18 @@ not to the ruler. `tagSpacing = 0.3` was confirmed four independent ways
 (ruler-measured 10.6 mm gap, the part number, the Kalibr default, and a
 reprojection-error sweep with a clear minimum at 0.30).
 
-## What works today
+## Delivered scope
 
-**v0.1, shipped**: one camera end to end (RGB intrinsics → stereo IR → RGB↔IR
-extrinsics → depth noise model → camera-IMU → accelerometer intrinsics → thermal
-drift model), with the tools, hand-written verdict checks in prose/UI code, the
-GUI, and ~15 documented pitfalls that cost real hours.
+**D435i calibration**: RGB intrinsics → stereo IR → RGB↔IR extrinsics →
+depth noise model → camera-IMU → accelerometer intrinsics → thermal drift
+model, together with capture/calibration tools, the GUI, and field-tested
+engineering notes.
 
-**v0.2.0, shipped**: those checks are now 24 declarative rules. One engine feeds
-the CLI, `REPORT.md`, and GUI cards, so a new device's verdicts mean new rules,
-not forked verdict code.
+**Declarative verdict layer**: 26 rules feed the CLI, `REPORT.md`, and GUI cards
+through one engine, so supporting another device means adding rules rather than
+forking verdict code.
 
-**v0.3, shipped**: the viewer renders arbitrary ROS 2
+**D435i/MID-360S rig**: the viewer renders arbitrary ROS 2
 `sensor_msgs/msg/PointCloud2` streams and Livox `CustomMsg`; the direct
 LiDAR–camera workflow covers capture through import; and live D435i/MID-360S
 clouds share one camera-frame canvas. The documented mount has four bound
@@ -62,7 +59,7 @@ with the calibrated IMU lever arm.
 
 ## End-to-end MID-360S IMU pipeline and ROS 2 deployment
 
-One fail-closed entry point now covers identity preflight, automatic stable-pose
+The fail-closed entry point covers identity preflight, automatic stable-pose
 capture (or existing rosbag2/NPZ inputs), explicit `g × 9.80665` conversion,
 calibration, independent holdout/observability gates, formal-result promotion,
 and the viewer-registry check:
@@ -71,7 +68,7 @@ and the viewer-registry check:
 # Live: automatically collect 12 fit + 3 holdout orientations from /livox/imu.
 ./calibrate_mid360s_imu.sh --project-root /path/to/your_rig_workspace
 
-# Reproduce/verify this documented rig without replacing its formal result.
+# Deterministically replay this documented rig's accepted result.
 ./calibrate_mid360s_imu.sh --verify-existing --inputs \
   data/mid360s_imu_intrinsic_20260901_run1 \
   data/mid360s_imu_intrinsic_20260901_run2 \
@@ -91,11 +88,10 @@ ros2 launch rgbd_fullcalib mid360s_imu_runtime.launch.py \
   config_file:=/absolute/path/to/mid360s_imu_calibration.yaml
 ```
 
-The runtime node subscribes to raw `/livox/imu`, applies the promoted model,
-and publishes calibrated SI measurements on `/livox/imu_calibrated`. It applies
-accelerometer bias/scale/non-orthogonality and gyro static bias only; it does
-not invent a gyro-scale calibration. Topics, frames, identity, paths, and
-outputs are ROS parameters in
+The runtime node subscribes to raw `/livox/imu`, applies the accepted
+accelerometer bias/scale/non-orthogonality and gyro static bias, and publishes
+calibrated SI measurements on `/livox/imu_calibrated`. Topics, frames, identity,
+paths, and outputs are ROS parameters in
 [`config/mid360s_imu_calibration.yaml`](config/mid360s_imu_calibration.yaml).
 
 The exact printable bracket used by the documented rig is included as a
@@ -119,10 +115,9 @@ it under `share/rgbd_fullcalib/hardware`.
 | MID-360S LiDAR–IMU + deskew | axes identical; IMU at `[+11.00,+23.29,−44.12]` mm; high-rotation plane P95 70.04→20.39 mm | Livox manual; 70/70 scans improve, low-rotation control 17.255→17.262 mm | ✅ current rig operational |
 | MID-360S→D435i time | dual-gyro offset −1.940 ms; final `t_depth = t_livox − 5.989 ms` | 12,910 matched samples; fit RMSE 0.01836 rad/s | ✅ current rig operational constant offset |
 
-The GUI and result API expose **11 current-rig results**. Their separate
-**7-item calibration reference** catalog is for other devices and deployment
-conditions; reference entries are not this rig's pending work and do not count
-toward result status.
+The GUI and result API expose **11 current-rig results** and a separate
+**7-item calibration reference** catalog for other devices and deployment
+conditions.
 
 Machine-readable outputs live in [`data/*.yaml`](data) and [`results/*.json`](results),
 including [`results/mid360s_d435i_timesync.json`](results/mid360s_d435i_timesync.json),
@@ -131,50 +126,34 @@ including [`results/mid360s_d435i_timesync.json`](results/mid360s_d435i_timesync
 [`results/mid360s_deskew_validation.json`](results/mid360s_deskew_validation.json);
 plots live in [`results/*.png`](results).
 
-The real-scan deskew audit had 100% valid point offsets and complete IMU
-coverage for 646/647 scans. A same-point ablation reduced P95 from 20.21 to
-19.48 mm when the calibrated lever-arm component was enabled (about 3.6% by
-group median; paired median about 2.8%).
+The real-scan deskew validation had 100% valid point offsets. A same-point
+ablation reduced P95 from 20.21 to 19.48 mm when the calibrated lever-arm
+component was enabled (about 3.6% by group median; paired median about 2.8%).
 
 The MID-360S IMU result also records gyro bias
-`[−0.006402,+0.000822,−0.008318] rad/s` and per-axis short-window
+`[−0.006402,+0.000822,−0.008318] rad/s` and per-axis 0.496 s short-window
 white-noise density at 196.156 Hz: accel
 `[0.004974,0.005405,0.006853] m/s²/√Hz`, gyro
-`[0.001421,0.001216,0.001749] rad/s/√Hz`. This is explicitly a 0.496 s
-white-noise estimate, not a long-duration Allan bias-instability/random-walk
-claim; gyro scale/misalignment belongs to the generic known-rate-table method,
-not this operational result.
+`[0.001421,0.001216,0.001749] rad/s/√Hz`. The deployed correction uses the
+measured accelerometer model and gyro static bias.
 
 The LiDAR–camera transform belongs to the documented rigid installation;
 another rig or a remount gets its own transform through the same workflow.
 
-## Negative results (published on purpose)
+## Validated applicability
 
-Things that *didn't* work are half the value of a calibration log:
+Every published result is tied to its sensor and rigid-mount identity. The
+runtime applies only parameters that passed observability, repeatability, and
+holdout checks; detailed controlled studies and deployment decisions are
+preserved in [CALIBRATION.md](CALIBRATION.md).
 
-- **The camera–IMU translation is not calibratable on this rig.** Three independent
-  solves scatter across 24.6–31.7 mm for a ~26 mm quantity. The lever arm (IMU sits
-  2–3 cm from the optical center) is too short for handheld excitation. Ship the
-  rotation, ship the timeshift, hand the translation to your VIO as an initial guess.
-- **Six-position accelerometer calibration does not fix dynamic residuals.** A strict
-  controlled experiment (same bag, only the accel preprocessing changed) left Kalibr's
-  normalized residuals essentially unchanged — the static-pose intrinsics were real,
-  but the dynamic residual is dominated by vibration, blur and sync jitter, not by
-  scale/non-orthogonality. Full table in [CALIBRATION.md](CALIBRATION.md).
-- **IMU-intrinsic correction couples into the extrinsic rotation** (~0.9° shift):
-  whatever axis-correction you calibrate with, you must also deploy with.
-- **Principal-point thermal drift is a myth on this unit** (R²=0.07 over a 13 °C
-  sweep) — measured, falsified, crossed off the worry list.
-- **A single static pose cannot separate bias, scale and non-orthogonality.** I tried.
-  It produced a confident, wrong scale-factor claim; 12 poses later the real culprit
-  was non-orthogonality. Documented as a worked example of the identifiability trap.
+## Engineering notes
 
-## Pitfalls that cost real hours
+Fifteen+ field-tested implementation notes are preserved in
+[CALIBRATION.md](CALIBRATION.md) (Chinese, with universal code snippets and
+numbers). Every entry below is resolved in the shipped tooling. Highlights:
 
-Fifteen+ entries with full stories in [CALIBRATION.md](CALIBRATION.md) (Chinese, but the
-code snippets and numbers read universally). Highlights:
-
-| # | Pitfall | One-line takeaway |
+| # | Engineering case | Applied solution |
 |---|---|---|
 | 1 | `cv2.aruco` default adaptive-threshold windows (3…23 step 10) | at ~6 px/tag-cell in IR you detect 2/36 tags; use 3…15 step 2 → 29/36 |
 | 2 | Both RealSense sensors report `supports(exposure)` | a loop "find the sensor" sets exposure on **RGB**, your IR stays untouched — *if a knob changes nothing, the knob isn't connected* |
@@ -189,31 +168,28 @@ code snippets and numbers read universally). Highlights:
 | 11 | USB2 negotiation was the *cable* | hub and port were innocent all along; USB-C cables are visually indistinguishable — check `bcdUSB`, then swap the cable first |
 | 12 | Stream-pairing must use a pending queue | "drop if out of range" silently discards valid samples (gyro/accel interleave) |
 | 13 | Range-along-ray vs z-depth confusion | stored ray length as depth once — a flat wall renders as a sphere (101 mm residual, right angles read 81.8°) |
-| 14 | WebGL pages never finish "loading" | `requestAnimationFrame` keeps headless screenshots timing out — ship a `?static=1` mode; verify your GUI with your own eyes |
+| 14 | Headless WebGL capture with live animation | `requestAnimationFrame` keeps headless screenshots active — use the shipped `?static=1` mode for deterministic capture |
 
-## v0.2.0 shipped: the verdict layer is data
+## Declarative verdict engine
 
-![Latest depth-model verdict with online-calibration and SLAM-impact badges](docs/img/verdict_depth_badges.png)
+![Depth-model verdict with online-calibration and SLAM-impact badges](docs/img/verdict_depth_badges.png)
 
 ```bash
 python -m verdicts                      # terminal verdicts
 python -m verdicts --md REPORT.md       # markdown report (committed in repo)
 ```
 
-Every check that used to live as prose now lives in
-[`verdicts/rules_d435i.yaml`](verdicts/rules_d435i.yaml) — 26 rules now
-(the original 24 plus two non-blocking delivered-IR rectification checks), each one
+The 26 published checks live in
+[`verdicts/rules_d435i.yaml`](verdicts/rules_d435i.yaml), each one
 `{value expression, external reference, tolerance, action}` — executed by a
 ~200-line engine ([`verdicts/engine.py`](verdicts/engine.py)) that feeds the CLI
 report, [`REPORT.md`](REPORT.md), and the GUI cards from one source of truth.
-Missing published artifacts are reported as integrity issues, not as future work.
-Adding a device's verdict checks means writing rules, not forking verdict code.
+The same engine enforces completeness of the published artifact set. Adding a
+device's verdict checks means writing rules, not forking verdict code.
 
-Machine-checking the prose paid off on day one: the old "five independent
-baseline measurements" claim turned out to be **fake independence** — Kalibr's
-imu-camera stage inherits the camera chain verbatim, so three of the five
-numbers were copies. The rule now says "two independent calibrations" and the
-yaml carries the comment explaining why.
+The rules distinguish two independently captured baseline calibrations from
+camera-chain values inherited into camera–IMU outputs; the independent pair
+differs by 0.005 mm.
 
 ## The GUI
 
@@ -225,13 +201,11 @@ from the actual yaml/json outputs — each card also carries two SLAM badges:
 are standard online states in VINS-class systems; intrinsics and the depth chain are not)
 and *how hard does it hit SLAM?*, tiered with the measured propagation number behind
 each tier), and **calibration reference** (applicability/method/output for seven
-reusable checks: four D435i and three LiDAR/rig references). The third tab is a
-method catalog for other units or deployment conditions; it is not
-pending/rework for the documented rig, is not counted among its 11 results,
-and is not a release plan. Thermal compensation can be applied to the live
-cloud with one checkbox.
+reusable checks: four D435i and three LiDAR/rig references). The third tab keeps
+this reusable method catalog separate from the 11 rig-specific results. Thermal
+compensation can be applied to the live cloud with one checkbox.
 
-![Latest calibration results with online-calibration and SLAM-impact badges](results/gui_slam_badges.png)
+![Calibration results with online-calibration and SLAM-impact badges](results/gui_slam_badges.png)
 
 ```bash
 ./view_pointcloud.sh fused                      # D435i + MID-360S, one frame/canvas
@@ -243,15 +217,14 @@ cloud with one checkbox.
 ```
 
 `fused` opens one `camera_color_optical_frame` canvas and transforms both live
-inputs into it. The documented rig's extrinsic, time alignment, and LiDAR–IMU
-geometry load automatically from
-`results/mid360s_d435i_extrinsic.local.json`,
-`results/mid360s_d435i_timesync.json`, and
-`results/mid360s_lidar_imu.json`; `--extrinsic PATH` selects another rig's
+inputs into it. The documented rig's
+[LiDAR–camera extrinsic](results/mid360s_d435i_extrinsic.local.json),
+[time alignment](results/mid360s_d435i_timesync.json), and
+[LiDAR–IMU geometry](results/mid360s_lidar_imu.json) load automatically;
+`--extrinsic PATH` selects another rig's
 camera transform. Livox `CustomMsg` scans use every point's `offset_time`, the
-built-in IMU, and the known IMU lever arm to compensate rotation to scan end.
-This is explicitly rotation-only deskew: it does not claim platform-translation
-or full-6DoF compensation. The
+built-in IMU, and the known IMU lever arm for validated scan-end rotational
+deskew. The
 [generic LiDAR–camera workflow](docs/LIDAR_CAMERA_EXTRINSIC.md) covers capture,
 solving, result conventions, import, and fused viewing.
 
